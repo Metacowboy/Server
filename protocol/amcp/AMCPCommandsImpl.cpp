@@ -724,7 +724,7 @@ bool LoadCommand::DoExecute()
 	//Perform loading of the clip
 	try
 	{
-		_parameters[0] = _parameters[0];
+		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
 		auto pFP = create_producer(GetChannel()->mixer(), _parameters);		
 		GetChannel()->stage()->load(GetLayerIndex(), pFP, true);
 	
@@ -830,7 +830,7 @@ bool LoadbgCommand::DoExecute()
 	//Perform loading of the clip
 	try
 	{
-		_parameters[0] = _parameters[0];
+		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
 		auto pFP = create_producer(GetChannel()->mixer(), _parameters);
 		if(pFP == frame_producer::empty())
 			BOOST_THROW_EXCEPTION(file_not_found() << msg_info(_parameters.size() > 0 ? narrow(_parameters[0]) : ""));
@@ -888,8 +888,7 @@ bool PlayCommand::DoExecute()
 			lbg.SetChannelIndex(GetChannelIndex());
 			lbg.SetLayerIntex(GetLayerIndex());
 			lbg.SetClientInfo(GetClientInfo());
-			for(auto it = _parameters.begin(); it != _parameters.end(); ++it)
-				lbg.AddParameter(*it);
+			lbg.SetParameters(_parameters);
 			if(!lbg.Execute())
 				throw std::exception();
 		}
@@ -938,7 +937,9 @@ bool ClearCommand::DoExecute()
 
 bool PrintCommand::DoExecute()
 {
-	GetChannel()->output()->add(create_consumer(boost::assign::list_of(L"IMAGE")));
+	parameters params;
+	params.push_back(L"IMAGE");
+	GetChannel()->output()->add(create_consumer(params));
 		
 	SetReplyString(TEXT("202 PRINT OK\r\n"));
 
