@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Profile|Win32">
@@ -179,7 +179,7 @@
       <ForcedIncludeFiles>common/compiler/vs/disable_silly_warnings.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>sfml-system-d.lib;sfml-audio-d.lib;sfml-window-d.lib;sfml-graphics-d.lib;OpenGL32.lib;FreeImage.lib;Winmm.lib;Ws2_32.lib;avformat.lib;avcodec.lib;avutil.lib;avfilter.lib;swscale.lib;tbb.lib;glew32.lib;zdll.lib</AdditionalDependencies>
+      <AdditionalDependencies>sfml-system-d.lib;sfml-audio-d.lib;sfml-window-d.lib;sfml-graphics-d.lib;OpenGL32.lib;FreeImage.lib;Winmm.lib;Ws2_32.lib;avformat.lib;avdevice.lib;avcodec.lib;avutil.lib;avfilter.lib;swscale.lib;tbb.lib;glew32.lib;zdll.lib</AdditionalDependencies>
       <Version>
       </Version>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>

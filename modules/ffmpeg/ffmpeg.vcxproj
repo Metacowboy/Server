@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Profile|Win32">
@@ -362,6 +362,7 @@
     <ClInclude Include="producer\muxer\display_mode.h" />
     <ClInclude Include="producer\muxer\frame_muxer.h" />
     <ClInclude Include="producer\tbb_avcodec.h" />
+    <ClInclude Include="producer\util\ffmpeg_producer_params.h" />
     <ClInclude Include="producer\util\flv.h" />
     <ClInclude Include="producer\util\util.h" />
     <ClInclude Include="producer\video\video_decoder.h" />
