@@ -84,7 +84,7 @@ public:
 			packets_.push(make_safe_ptr(packet));
 	}
 
-	std::shared_ptr<PacketFrame> poll()
+	std::shared_ptr<AVFrame> poll()
 	{		
 		if(packets_.empty())
 			return nullptr;
@@ -96,28 +96,28 @@ public:
 			packets_.pop();
 			if(codec_context_->codec->capabilities & CODEC_CAP_DELAY)
 			{
-				auto video = decode(*packet);
+				auto video = decode(packet.get());
 				if(video)
 				{
-					return PacketFrame::create(packet, video);
+					return video;
 				}
 			}
 					
 			file_frame_number_ = static_cast<size_t>(packet->pos);
 			avcodec_flush_buffers(codec_context_.get());
-			return PacketFrame::create(nullptr, flush_video());	
+			return flush_video();	
 		}
 			
 		packets_.pop();
-		return PacketFrame::create(packet, decode(*packet));
+		return decode(packet.get());
 	}
 
-	std::shared_ptr<AVFrame> decode(AVPacket& pkt)
+	std::shared_ptr<AVFrame> decode(AVPacket const* pkt)
 	{
 		std::shared_ptr<AVFrame> decoded_frame(avcodec_alloc_frame(), av_free);
 
 		int frame_finished = 0;
-		THROW_ON_ERROR2(avcodec_decode_video2(codec_context_.get(), decoded_frame.get(), &frame_finished, &pkt), "[video_decoder]");
+		THROW_ON_ERROR2(avcodec_decode_video2(codec_context_.get(), decoded_frame.get(), &frame_finished, pkt), "[video_decoder]");
 		
 		// If a decoder consumes less then the whole packet then something is wrong
 		// that might be just harmless padding at the end, or a problem with the
@@ -133,7 +133,10 @@ public:
 		
 		++file_frame_number_;
 
-		return decoded_frame;
+		// This ties the life of the decoded_frame to the packet that it came from. For the
+		// current version of ffmpeg (0.8 or c17808c) the RAW_VIDEO codec returns frame data
+		// owned by the packet.
+		return std::shared_ptr<AVFrame>(decoded_frame.get(), [decoded_frame, pkt](AVFrame*){});
 	}
 	
 	bool ready() const
@@ -154,7 +157,7 @@ public:
 
 video_decoder::video_decoder(const safe_ptr<AVFormatContext>& context) : impl_(new implementation(context)){}
 void video_decoder::push(const std::shared_ptr<AVPacket>& packet){impl_->push(packet);}
-std::shared_ptr<PacketFrame> video_decoder::poll(){return impl_->poll();}
+std::shared_ptr<AVFrame> video_decoder::poll(){return impl_->poll();}
 bool video_decoder::ready() const{return impl_->ready();}
 size_t video_decoder::width() const{return impl_->width_;}
 size_t video_decoder::height() const{return impl_->height_;}
