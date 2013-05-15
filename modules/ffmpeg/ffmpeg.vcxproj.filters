@@ -28,6 +28,27 @@
     <Filter Include="source\producer\muxer">
       <UniqueIdentifier>{26599786-a0d9-4cc3-b5a4-633e9c81563a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="source\producer2">
+      <UniqueIdentifier>{f94d40dd-14fa-4e21-aba1-ca2d0f6fcd45}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\producer2\audio">
+      <UniqueIdentifier>{4d0e22b1-4e6a-42cf-a969-d4e0ea837ec9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\producer2\filter">
+      <UniqueIdentifier>{c9c4237d-c02c-41a7-a624-6ea9cf1c47dc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\producer2\input">
+      <UniqueIdentifier>{f00fddf4-36ce-41c4-afa0-902e0cc3f4aa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\producer2\muxer">
+      <UniqueIdentifier>{c802bd02-7258-4b11-8199-467697f894d8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\producer2\util">
+      <UniqueIdentifier>{35e393ba-54eb-4776-a9c4-02c5b0bd7854}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source\producer2\video">
+      <UniqueIdentifier>{0af324f0-7ac6-4f63-9530-72865686186d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="producer\video\video_decoder.cpp">
@@ -69,6 +90,39 @@
     </ClCompile>
     <ClCompile Include="producer\ffmpeg_producer.cpp">
       <Filter>source\producer</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\audio\audio_decoder_2.cpp">
+      <Filter>source\producer2\audio</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\audio\audio_resampler_2.cpp">
+      <Filter>source\producer2\audio</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\filter\filter_2.cpp">
+      <Filter>source\producer2\filter</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\filter\parallel_yadif_2.cpp">
+      <Filter>source\producer2\filter</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\input\input_2.cpp">
+      <Filter>source\producer2\input</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\muxer\frame_muxer_2.cpp">
+      <Filter>source\producer2\muxer</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\video\video_decoder_2.cpp">
+      <Filter>source\producer2\video</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\util\flv_2.cpp">
+      <Filter>source\producer2\util</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\input\file_util_2.cpp">
+      <Filter>source\producer2\input</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\ffmpeg_producer_2.cpp">
+      <Filter>source\producer2</Filter>
+    </ClCompile>
+    <ClCompile Include="producer2\frame_maker_2.cpp">
+      <Filter>source\producer2</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -117,6 +171,46 @@
     </ClInclude>
     <ClInclude Include="producer\tbb_avcodec.h">
       <Filter>source\producer</Filter>
+    </ClInclude>
+    <ClInclude Include="producer\util\ffmpeg_producer_params.h" />
+    <ClInclude Include="producer2\audio\audio_decoder.h">
+      <Filter>source\producer2\audio</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\audio\audio_resampler.h">
+      <Filter>source\producer2\audio</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\filter\filter.h">
+      <Filter>source\producer2\filter</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\filter\parallel_yadif.h">
+      <Filter>source\producer2\filter</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\input\input.h">
+      <Filter>source\producer2\input</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\muxer\display_mode.h">
+      <Filter>source\producer2\muxer</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\muxer\frame_muxer.h">
+      <Filter>source\producer2\muxer</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\video\video_decoder.h">
+      <Filter>source\producer2\video</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\util\flv.h">
+      <Filter>source\producer2\util</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\input\file_util.h">
+      <Filter>source\producer2\input</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\ffmpeg_producer.h">
+      <Filter>source\producer2</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\frame_maker.h">
+      <Filter>source\producer2</Filter>
+    </ClInclude>
+    <ClInclude Include="producer2\ffmpeg_error.h">
+      <Filter>source\producer2</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
