@@ -144,7 +144,7 @@ public:
 		auto format_desc = frame_factory->get_video_format_desc();
 		if (audio_stream)
 		{
-//			audio_decoder_.reset(new audio_decoder(input_->audio_stream(), format_desc));
+			audio_decoder_.reset(new audio_decoder(input_->audio_stream(), format_desc));
 		}
 
 		// TODO Log the audio / video not present warnings. CP 2013-04
@@ -234,16 +234,16 @@ public:
 
 			try
 			{
-				auto frame = read_frame();
-				if (frame && frame != bad_video_frame())
+				auto frame = decode_packet();
+				if (frame == bad_video_frame())
+					graph_->set_tag("bad-frame");
+
+				if (frame)
 				{
 					if (params_->resource_type == ffmpeg::FFMPEG_FILE || frame_buffer_.size() < 10) 
 					{
 						frame_buffer_.push(make_safe_ptr(frame));
 					}
-				} else 
-				{
-					graph_->set_tag("bad-frame");
 				}
 				//av_usleep((unsigned)(tick_delay_ * 1000000.0));
 				tick();
@@ -257,6 +257,19 @@ public:
 	}
 
 	std::shared_ptr<core::basic_frame> read_frame()
+	{
+		std::shared_ptr<core::basic_frame> frame = nullptr;
+		for (int i = 0; i < 32 && frame == nullptr; ++i)
+		{
+			frame = decode_packet();
+		}
+		if (frame == nullptr)
+			graph_->set_tag("underflow");
+
+		return frame;
+	}
+
+	std::shared_ptr<core::basic_frame> decode_packet()
 	{
 		// Read a packet from the input stream
 		frame_timer_.restart();
@@ -282,13 +295,6 @@ public:
 		}
 		else
 		{	
-			// TODO REVIEW Does this make sense? audio cf video stream index CP 2013-04
-			//if(packet->stream_index != video_stream_index_)
-			//{
-			//	av_free_packet(&packet);
-			//	return bad_video_frame();
-			//}
-			
 			frame_timer_.restart();
 			
 			std::shared_ptr<AVFrame>			video;
@@ -297,34 +303,32 @@ public:
 			if (video_decoder_ && packet->stream_index == input_->video_stream_index())
 			{
 				video = video_decoder_->decode(packet);	
-			}
-			if (audio_decoder_ && packet->stream_index == input_->audio_stream_index())
+				muxer_->push(video, hints_);
+				if(!audio_decoder_)
+				{
+					if(video == flush_video())
+						muxer_->push(flush_audio());
+					else if(!muxer_->audio_ready())
+						muxer_->push(empty_audio());
+				}
+			} else if (audio_decoder_ && packet->stream_index == input_->audio_stream_index())
 			{
-				audio = audio_decoder_->decode(packet);		
+				do
+				{
+					audio = audio_decoder_->decode(packet);		
+					muxer_->push(audio);
+					if(!video_decoder_)
+					{
+						if(audio == flush_audio())
+							muxer_->push(flush_video(), 0);
+						else if(!muxer_->video_ready())
+							muxer_->push(empty_video(), 0);
+					}
+				} while (packet->size > 0 && audio != nullptr);
 			}
 		
 			graph_->set_value("decode-time", frame_timer_.elapsed() * fps_ * 0.5);
 
-			// Write the frame
-			muxer_->push(video, hints_);
-			muxer_->push(audio);
-
-			if(!audio_decoder_)
-			{
-				if(video == flush_video())
-					muxer_->push(flush_audio());
-				else if(!muxer_->audio_ready())
-					muxer_->push(empty_audio());
-			}
-
-			if(!video_decoder_)
-			{
-				if(audio == flush_audio())
-					muxer_->push(flush_video(), 0);
-				else if(!muxer_->video_ready())
-					muxer_->push(empty_video(), 0);
-			}
-		
 			frame_number_ = std::max(frame_number_, video_decoder_ ? video_decoder_->file_frame_number() : 0);
 			//file_frame_number = std::max(file_frame_number, audio_decoder_ ? audio_decoder_->file_frame_number() : 0);
 
@@ -338,9 +342,15 @@ public:
 		return bad_video_frame();
 	}
 
+	int synchronize_audio(int number_samples)
+	{
+		int wanted_samples = number_samples;
+		return wanted_samples;
+	}
+
 	std::shared_ptr<core::basic_frame> bad_video_frame()
 	{
-		static std::shared_ptr<core::basic_frame> frame;
+		static std::shared_ptr<core::basic_frame> frame(new core::basic_frame());
 		return frame;
 	}
 
@@ -384,12 +394,6 @@ public:
 			CASPAR_LOG(trace) << print() << " Received EOF. ";
 
 		return ret == AVERROR_EOF || ret == AVERROR(EIO) || frame_number_ >= params_->length; // av_read_frame doesn't always correctly return AVERROR_EOF;
-	}
-
-	safe_ptr<core::basic_frame> bad_video()
-	{
-		static safe_ptr<core::basic_frame> video;
-		return video;
 	}
 
 	boost::property_tree::wptree info() const

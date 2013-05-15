@@ -85,7 +85,7 @@ struct audio_resampler::implementation
 	}
 
 	std::vector<int8_t, tbb::cache_aligned_allocator<int8_t>> resample(std::vector<int8_t, tbb::cache_aligned_allocator<int8_t>>&& data)
-	{
+	{/*
 		if(resampler_ && !data.empty())
 		{
 			buffer2_.resize(AVCODEC_MAX_AUDIO_FRAME_SIZE*2);
@@ -96,7 +96,7 @@ struct audio_resampler::implementation
 			buffer2_.resize(ret * av_get_bytes_per_sample(output_sample_format_) * output_channels_);
 			std::swap(data, buffer2_);
 		}
-
+		*/
 		return std::move(data);
 	}
 };

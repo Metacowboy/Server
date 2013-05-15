@@ -179,7 +179,7 @@ struct frame_muxer::implementation : boost::noncopyable
 			boost::range::push_back(audio_streams_.back(), *audio);
 		}
 
-		if(audio_streams_.back().size() > 32*audio_cadence_.front())
+		if(audio_streams_.back().size() > 128*audio_cadence_.front())
 			BOOST_THROW_EXCEPTION(invalid_operation() << source_info("frame_muxer") << msg_info("audio-stream overflow. This can be caused by incorrect frame-rate. Check clip meta-data."));
 	}
 	

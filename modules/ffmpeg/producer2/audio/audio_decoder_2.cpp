@@ -44,6 +44,7 @@ extern "C"
 {
 	#include <libavformat/avformat.h>
 	#include <libavcodec/avcodec.h>
+	#include "libswresample/swresample.h"
 }
 #if defined(_MSC_VER)
 #pragma warning (pop)
@@ -57,12 +58,21 @@ public:
 	uint64_t													stream_frame_number_;
 
 private:
+
+	const core::video_format_desc								format_desc_;
+	int64_t														format_desc_channel_layout_;
+
+	std::shared_ptr<SwrContext>									swr_context_;
+
+	//-----
+
+
 	int															index_;
 	std::shared_ptr<AVCodecContext>								codec_context_;
 
 	audio_resampler												resampler_;
 
-	std::vector<int8_t,  tbb::cache_aligned_allocator<int8_t>>	buffer1_;
+	std::vector<uint8_t,  tbb::cache_aligned_allocator<uint8_t>>	buffer1_;
 
 public:
 	explicit implementation(AVStream const* audio_stream, const core::video_format_desc& format_desc) 
@@ -71,10 +81,12 @@ public:
 			format_desc.audio_sample_rate, audio_stream->codec->sample_rate,
 			AV_SAMPLE_FMT_S32,			   audio_stream->codec->sample_fmt
 		)
-		, buffer1_(AVCODEC_MAX_AUDIO_FRAME_SIZE*2)
+		, format_desc_(format_desc)
+		, buffer1_(AVCODEC_MAX_AUDIO_FRAME_SIZE * 4)
 //		, nb_frames_(0) //audio_stream->nb_frames)
 	{
 		codec_context_ = open_codec(audio_stream->codec);
+		format_desc_channel_layout_ = av_get_default_channel_layout(format_desc_.audio_channels);
 
 		stream_frame_number_ = 0;   
 	}
@@ -99,36 +111,99 @@ public:
 			return frame_maker::flush_audio();
 		}
 
-		auto audio = decode_packet(packet);
-
-		// TODO REVIEW Why this check? CP 2013-04
-		//if(packet->size == 0)					
-		//	packets_.pop();
-
+		auto audio = decode_frame(packet);
 		return audio;
 	}
 
-	std::shared_ptr<core::audio_buffer> decode_packet(const std::shared_ptr<AVPacket>& packet)
-	{		
-		buffer1_.resize(AVCODEC_MAX_AUDIO_FRAME_SIZE*2);
-		int written_bytes = buffer1_.size() - FF_INPUT_BUFFER_PADDING_SIZE;
-		
-		int ret = THROW_ON_ERROR2(avcodec_decode_audio3(codec_context_.get(), reinterpret_cast<int16_t*>(buffer1_.data()), &written_bytes, packet.get()), "[audio_decoder]");
+	std::shared_ptr<core::audio_buffer> decode_frame(const std::shared_ptr<AVPacket>& packet)
+	{
+		int frame_finished = 0;
+		auto decoded_frame = std::shared_ptr<AVFrame>(avcodec_alloc_frame(), av_free);
+		do
+		{
+			auto len1 = THROW_ON_ERROR2(avcodec_decode_audio4(codec_context_.get(), decoded_frame.get(), &frame_finished, packet.get()), "[audio_decoder]");
+			packet->data += len1;
+			packet->size -= len1;
+		} while (!frame_finished && packet->size > 0);
 
-		// There might be several frames in one packet.
-		packet->size -= ret;
-		packet->data += ret;
-			
-		buffer1_.resize(written_bytes);
+		// TODO What if !frame_finished && packet->size == 0 Really shouldn't happen.
 
-		buffer1_ = resampler_.resample(std::move(buffer1_));
-		
-		const auto n_samples = buffer1_.size() / av_get_bytes_per_sample(AV_SAMPLE_FMT_S32);
-		const auto samples = reinterpret_cast<int32_t*>(buffer1_.data());
+		// TODO Fixup for CODEC_CAP_DELAY and flush
 
-		++stream_frame_number_;
+		// TODO Stop here, allow the consumer to figure out pts / drift / sync, then call another function to resample
 
-		return std::make_shared<core::audio_buffer>(samples, samples + n_samples);
+		//auto data_size = av_samples_get_buffer_size(NULL, codec_context_->channels, decoded_frame->nb_samples, codec_context_->sample_fmt, 1);
+		int64_t codec_channel_layout;
+		if (codec_context_->channel_layout && codec_context_->channels == av_get_channel_layout_nb_channels(codec_context_->channel_layout))
+		{
+			codec_channel_layout = codec_context_->channel_layout;
+		} else 
+		{
+			codec_channel_layout = av_get_default_channel_layout(codec_context_->channels);
+		}
+
+		int wanted_samples = decoded_frame->nb_samples;
+
+		// TODO Might as well init the swr context in the ctor.
+		if (codec_context_->sample_fmt != AV_SAMPLE_FMT_S32 ||
+			codec_channel_layout != format_desc_channel_layout_ ||
+			codec_context_->sample_rate != (int)format_desc_.audio_sample_rate ||
+            (wanted_samples != decoded_frame->nb_samples && !swr_context_))
+		{
+			swr_context_.reset(swr_alloc_set_opts(
+				NULL,
+				format_desc_channel_layout_,	AV_SAMPLE_FMT_S32,			format_desc_.audio_sample_rate,
+                codec_channel_layout,			codec_context_->sample_fmt, codec_context_->sample_rate,
+                0, NULL),
+				[](SwrContext* p) { swr_free(&p); }
+			);
+			// TODO Can THROW2 this
+			if (!swr_context_ || swr_init(swr_context_.get()) < 0) {
+/*                    fprintf(stderr, "Cannot create sample rate converter for conversion of %d Hz %s %d channels to %d Hz %s %d channels!\n",
+                        codec_context_->sample_rate,
+                        av_get_sample_fmt_name(codec_context_->sample_fmt),
+                        codec_context_->channels,
+                        is->audio_tgt.freq,
+                        av_get_sample_fmt_name(is->audio_tgt.fmt),
+                        is->audio_tgt.channels);
+                    break;*/
+			}
+		}
+
+        if (swr_context_)
+		{
+			// TODO Add the compensation back in
+			//if (wanted_samples != decoded_frame->nb_samples)
+			//{
+			//	// TODO This is mostly done, just THROW2 on it for the error handling.
+			//	if (swr_set_compensation(swr_context_.get(), (wanted_samples - is->frame->nb_samples) * format_desc_.audio_sample_rate / codec_context_->sample_rate,
+			//		wanted_samples * format_desc_.audio_sample_rate / codec_context_->sample_rate) < 0)
+			//	{
+			//		fprintf(stderr, "swr_set_compensation() failed\n");
+			//		break;
+			//	}
+			//}
+			const uint8_t *in[] = { decoded_frame->data[0] };
+			buffer1_.resize(AVCODEC_MAX_AUDIO_FRAME_SIZE * 4); // TODO REVIEW Maybe we shouldn't fiddle with the size.
+			uint8_t* out[] = { buffer1_.data() };
+			int out_count = buffer1_.size() / format_desc_.audio_channels / av_get_bytes_per_sample(AV_SAMPLE_FMT_S32);
+//			auto len2 = THROW_ON_ERROR2(swr_convert(swr_context_.get(), out, out_count, in, decoded_frame->nb_samples));
+			int len2 = swr_convert(swr_context_.get(), out, out_count, in, decoded_frame->nb_samples);
+			// TODO put this check back
+            //if (len2 == out_count) {
+            //    fprintf(stderr, "warning: audio buffer is probably too small\n");
+            //    swr_init(is->swr_ctx);
+            //}
+            const auto n_samples = len2 * format_desc_.audio_channels;
+			const auto samples = reinterpret_cast<int32_t*>(buffer1_.data());
+			++stream_frame_number_;
+			return std::make_shared<core::audio_buffer>(samples, samples + n_samples);
+        } else {
+			const auto n_samples = decoded_frame->nb_samples * format_desc_.audio_channels;
+			const auto samples = reinterpret_cast<int32_t*>(decoded_frame->data[0]);
+			++stream_frame_number_;
+			return std::make_shared<core::audio_buffer>(samples, samples + n_samples);
+        }
 	}
 
 	uint32_t nb_frames() const

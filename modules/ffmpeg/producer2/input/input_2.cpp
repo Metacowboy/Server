@@ -90,6 +90,7 @@ public:
 	{	
 		std::shared_ptr<AVPacket> packet(new AVPacket, [](AVPacket* p)
 		{
+			if (p->stream_index == 1) return;
 			av_free_packet(p);
 			delete p;
 		});
@@ -368,7 +369,7 @@ public:
 		if(last_read_result_ == AVERROR_EOF)
 			CASPAR_LOG(trace) << print() << " Received EOF. ";
 
-		return last_read_result_ == AVERROR_EOF || last_read_result_ == AVERROR(EIO) || frame_number_ >= params_->length; // av_read_frame doesn't always correctly return AVERROR_EOF;
+		return last_read_result_ == AVERROR_EOF || last_read_result_ == AVERROR(EIO)/* || frame_number_ >= params_->length*/; // av_read_frame doesn't always correctly return AVERROR_EOF;
 	}
 };
 
