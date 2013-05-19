@@ -177,12 +177,14 @@ public:
 			
 			// Send the frame to the layer_consumers
 			// TODO BOOST_FOREACH?
+			int count = 0;
 			for (auto it = layer_consumers_.begin(); it != layer_consumers_.end(); ++it)
 			{
 				int layer = it->first;
 				auto layer_consumer = it->second;
 				auto frame = frames[layer];
 				layer_consumer->send(frame);
+				count++;
 			}
 
 			std::shared_ptr<void> ticket(nullptr, [self](void*)

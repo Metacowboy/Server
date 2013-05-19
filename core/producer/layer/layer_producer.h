@@ -28,7 +28,7 @@
 
 namespace caspar { namespace core {
 
-class video_channel;
+class stage;
 struct frame_factory;
 
 safe_ptr<frame_producer> create_layer_producer(const safe_ptr<core::frame_factory>& frame_factory, const safe_ptr<stage>& stage, int layer);

@@ -745,7 +745,8 @@ bool CopyCommand::DoExecute()
 
 		auto frame_producer = create_layer_producer(GetChannel()->mixer(), stage, layer);
 		GetChannel()->stage()->load(GetLayerIndex(), frame_producer, true);
-	
+		GetChannel()->stage()->play(GetLayerIndex());
+
 		SetReplyString(TEXT("202 COPY OK\r\n"));
 
 		return true;

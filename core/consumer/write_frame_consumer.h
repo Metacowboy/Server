@@ -41,15 +41,9 @@ struct write_frame_consumer : boost::noncopyable
 {
 	virtual ~write_frame_consumer() {}
 	
-	virtual boost::unique_future<bool> send(const safe_ptr<basic_frame>& frame) = 0;
-	virtual void initialize(const video_format_desc& format_desc, int channel_index) = 0;
+	virtual void send(const safe_ptr<basic_frame>& frame) = 0;
 	virtual std::wstring print() const = 0;
-	virtual boost::property_tree::wptree info() const = 0;
-	virtual bool has_synchronization_clock() const {return true;}
-	virtual size_t buffer_depth() const = 0;
-	virtual int index() const = 0;
-
-	static const safe_ptr<write_frame_consumer>& empty();
+	//virtual boost::property_tree::wptree info() const = 0;
 };
 
 }}

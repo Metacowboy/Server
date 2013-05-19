@@ -41,98 +41,22 @@
 
 namespace caspar { namespace core {
 
-class layer_consumer : public write_frame_consumer
-{	
-	tbb::concurrent_bounded_queue<std::shared_ptr<basic_frame>>	frame_buffer_;
-	core::video_format_desc										format_desc_;
-	int															channel_index_;
-	tbb::atomic<bool>											is_running_;
-
-public:
-	layer_consumer() 
-	{
-		is_running_ = true;
-		frame_buffer_.set_capacity(3);
-	}
-
-	~layer_consumer()
-	{
-		stop();
-	}
-
-	// frame_consumer
-
-	virtual boost::unique_future<bool> send(const safe_ptr<basic_frame>& frame) override
-	{
-		frame_buffer_.try_push(frame);
-		return caspar::wrap_as_future(is_running_.load());
-	}
-
-	virtual void initialize(const core::video_format_desc& format_desc, int channel_index) override
-	{
-		format_desc_    = format_desc;
-		channel_index_  = channel_index;
-	}
-
-	virtual std::wstring print() const override
-	{
-		return L"[layer_consumer|" + boost::lexical_cast<std::wstring>(channel_index_) + L"]";
-	}
-
-	virtual boost::property_tree::wptree info() const override
-	{
-		boost::property_tree::wptree info;
-		info.add(L"type", L"layer_consumer");
-		info.add(L"channel-index", channel_index_);
-		return info;
-	}
-	
-	virtual bool has_synchronization_clock() const override
-	{
-		return false;
-	}
-
-	virtual size_t buffer_depth() const override
-	{
-		return 1;
-	}
-
-	virtual int index() const override
-	{
-		return 78500 + channel_index_;
-	}
-
-	// channel_consumer
-
-	void stop()
-	{
-		is_running_ = false;
-		frame_buffer_.try_push(basic_frame::empty());
-	}
-	
-	const core::video_format_desc& get_video_format_desc()
-	{
-		return format_desc_;
-	}
-
-	std::shared_ptr<basic_frame> receive()
-	{
-		if(!is_running_)
-			return basic_frame::empty();
-		std::shared_ptr<basic_frame> frame;
-		frame_buffer_.try_pop(frame);
-		return frame;
-	}
-};
-
 class frame_copy_visitor : public frame_visitor
 {
-public:
+	const safe_ptr<frame_factory> frame_factory_;
+	void* tag_;
 
+
+public:
 	std::shared_ptr<write_frame> destination_frame_;
 
-	frame_copy_visitor(const std::shared_ptr<write_frame>& destination_frame, const std::shared_ptr<basic_frame>& src_frame)
-		: destination_frame_(destination_frame)
+	frame_copy_visitor(
+		const safe_ptr<frame_factory>& frame_factory,
+		void* tag,
+		const std::shared_ptr<basic_frame>& src_frame
+	)   : frame_factory_(frame_factory)
+		, tag_(tag)
+		 
 	{
 		src_frame->accept(*this);
 	}
@@ -149,12 +73,62 @@ public:
 	{
 	}
 
-	virtual void visit(write_frame& frame)
+	virtual void visit(write_frame& src_frame)
 	{
-		fast_memcpy(destination_frame_->image_data().begin(), frame.image_data().begin(), frame.image_data().size());
-		destination_frame_->commit();
+		core::pixel_format_desc desc = src_frame.get_pixel_format_desc();
+		destination_frame_ = frame_factory_->create_frame(tag_, desc);
+		auto src_image_data = src_frame.image_data();
+		if (src_image_data.begin() != nullptr && src_image_data.size() > 0)
+		{
+			fast_memcpy(destination_frame_->image_data().begin(), src_frame.image_data().begin(), src_frame.image_data().size());
+			destination_frame_->commit();
+		}
 	}
 
+};
+
+class layer_consumer : public write_frame_consumer
+{	
+	const safe_ptr<frame_factory>							frame_factory_;
+	void*													tag_;
+	tbb::concurrent_bounded_queue<safe_ptr<basic_frame>>	frame_buffer_;
+	int														layer_index_;
+
+public:
+	layer_consumer(const safe_ptr<frame_factory>& frame_factory, void* tag) 
+		: frame_factory_(frame_factory)
+		, tag_(tag)
+	{
+		frame_buffer_.set_capacity(3);
+	}
+
+	~layer_consumer()
+	{
+	}
+
+	// frame_consumer
+
+	virtual void send(const safe_ptr<basic_frame>& src_frame) override
+	{
+		// Do the copy ASAP then add to the frame buffer
+		frame_copy_visitor copier(frame_factory_, tag_, src_frame);
+		frame_buffer_.try_push(make_safe_ptr(copier.destination_frame_));	
+	}
+
+	virtual std::wstring print() const override
+	{
+		return L"[layer_consumer|" + boost::lexical_cast<std::wstring>(layer_index_) + L"]";
+	}
+
+	safe_ptr<basic_frame> receive()
+	{
+		safe_ptr<basic_frame> frame;
+		if (!frame_buffer_.try_pop(frame))
+		{
+			return basic_frame::late();
+		}
+		return frame;
+	}
 };
 
 class layer_producer : public frame_producer
@@ -169,7 +143,7 @@ class layer_producer : public frame_producer
 public:
 	explicit layer_producer(const safe_ptr<frame_factory>& frame_factory, const safe_ptr<stage>& stage, int layer) 
 		: frame_factory_(frame_factory)
-		, consumer_(new layer_consumer())
+		, consumer_(new layer_consumer(frame_factory, this))
 		, last_frame_(basic_frame::empty())
 		, frame_number_(0)
 	{
@@ -179,7 +153,6 @@ public:
 
 	~layer_producer()
 	{
-		consumer_->stop();
 		CASPAR_LOG(info) << print() << L" Uninitialized";
 	}
 
@@ -187,8 +160,6 @@ public:
 			
 	virtual safe_ptr<basic_frame> receive(int) override
 	{
-		auto format_desc = consumer_->get_video_format_desc();
-
 		if(frame_buffer_.size() > 1)
 		{
 			auto frame = frame_buffer_.front();
@@ -197,20 +168,14 @@ public:
 		}
 		
 		auto consumer_frame = consumer_->receive();
-		if(!consumer_frame)
+		if (consumer_frame == basic_frame::late())
+		{
 			return basic_frame::late();		
+		}
 
 		frame_number_++;
 		
-		core::pixel_format_desc desc;
-		desc.pix_fmt = core::pixel_format::bgra;
-		desc.planes.push_back(core::pixel_format_desc::plane(format_desc.width, format_desc.height, 4));
-		auto frame = frame_factory_->create_frame(this, desc);
-
-		frame_copy_visitor copier(frame, consumer_frame);
-
-		frame_buffer_.push(frame);	
-		
+		frame_buffer_.push(consumer_frame);	
 		return receive(0);
 	}	
 
