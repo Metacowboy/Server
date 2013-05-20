@@ -159,7 +159,12 @@ public:
 					hints |= frame_producer::ALPHA_HINT;
 
 				auto frame = layer.second.receive(hints);	
-				
+				auto layer_consumer_it = layer_consumers_.find(layer.first);
+				if (layer_consumer_it != layer_consumers_.end())
+				{
+					layer_consumer_it->second->send(frame);
+				}
+
 				auto frame1 = make_safe<core::basic_frame>(frame);
 				frame1->get_frame_transform() = transform;
 
@@ -174,18 +179,6 @@ public:
 			});
 			
 			graph_->set_value("produce-time", produce_timer_.elapsed()*format_desc_.fps*0.5);
-			
-			// Send the frame to the layer_consumers
-			// TODO BOOST_FOREACH?
-			int count = 0;
-			for (auto it = layer_consumers_.begin(); it != layer_consumers_.end(); ++it)
-			{
-				int layer = it->first;
-				auto layer_consumer = it->second;
-				auto frame = frames[layer];
-				layer_consumer->send(frame);
-				count++;
-			}
 
 			std::shared_ptr<void> ticket(nullptr, [self](void*)
 			{

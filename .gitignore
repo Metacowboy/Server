@@ -13,3 +13,4 @@ version.h
 ipch/
 shell/crt_log.txt
 shell/log/
+shell/media/

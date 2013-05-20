@@ -41,78 +41,28 @@
 
 namespace caspar { namespace core {
 
-class frame_copy_visitor : public frame_visitor
-{
-	const safe_ptr<frame_factory> frame_factory_;
-	void* tag_;
-
-
-public:
-	std::shared_ptr<write_frame> destination_frame_;
-
-	frame_copy_visitor(
-		const safe_ptr<frame_factory>& frame_factory,
-		void* tag,
-		const std::shared_ptr<basic_frame>& src_frame
-	)   : frame_factory_(frame_factory)
-		, tag_(tag)
-		 
-	{
-		src_frame->accept(*this);
-	}
-
-	virtual ~frame_copy_visitor()
-	{
-	}
-
-	virtual void begin(basic_frame& frame)
-	{
-	}
-
-	virtual void end()
-	{
-	}
-
-	virtual void visit(write_frame& src_frame)
-	{
-		core::pixel_format_desc desc = src_frame.get_pixel_format_desc();
-		destination_frame_ = frame_factory_->create_frame(tag_, desc);
-		auto src_image_data = src_frame.image_data();
-		if (src_image_data.begin() != nullptr && src_image_data.size() > 0)
-		{
-			fast_memcpy(destination_frame_->image_data().begin(), src_frame.image_data().begin(), src_frame.image_data().size());
-			destination_frame_->commit();
-		}
-	}
-
-};
-
 class layer_consumer : public write_frame_consumer
 {	
 	const safe_ptr<frame_factory>							frame_factory_;
-	void*													tag_;
-	tbb::concurrent_bounded_queue<safe_ptr<basic_frame>>	frame_buffer_;
 	int														layer_index_;
 
+	tbb::concurrent_bounded_queue<safe_ptr<basic_frame>>	frame_buffer_;
+
 public:
-	layer_consumer(const safe_ptr<frame_factory>& frame_factory, void* tag) 
-		: frame_factory_(frame_factory)
-		, tag_(tag)
+	layer_consumer() 
 	{
-		frame_buffer_.set_capacity(3);
+		frame_buffer_.set_capacity(100);
 	}
 
 	~layer_consumer()
 	{
 	}
 
-	// frame_consumer
+	// write_frame_consumer
 
 	virtual void send(const safe_ptr<basic_frame>& src_frame) override
 	{
-		// Do the copy ASAP then add to the frame buffer
-		frame_copy_visitor copier(frame_factory_, tag_, src_frame);
-		frame_buffer_.try_push(make_safe_ptr(copier.destination_frame_));	
+		frame_buffer_.try_push(src_frame);
 	}
 
 	virtual std::wstring print() const override
@@ -134,20 +84,21 @@ public:
 class layer_producer : public frame_producer
 {
 	const safe_ptr<frame_factory>			frame_factory_;
+	int										layer_;
 	const std::shared_ptr<layer_consumer>	consumer_;
 
-	std::queue<safe_ptr<basic_frame>>		frame_buffer_;
 	safe_ptr<basic_frame>					last_frame_;
 	uint64_t								frame_number_;
 
 public:
 	explicit layer_producer(const safe_ptr<frame_factory>& frame_factory, const safe_ptr<stage>& stage, int layer) 
 		: frame_factory_(frame_factory)
-		, consumer_(new layer_consumer(frame_factory, this))
+		, layer_(layer)
+		, consumer_(new layer_consumer())
 		, last_frame_(basic_frame::empty())
 		, frame_number_(0)
 	{
-		stage->add_layer_consumer(layer, consumer_);
+		stage->add_layer_consumer(layer_, consumer_);
 		CASPAR_LOG(info) << print() << L" Initialized";
 	}
 
@@ -160,23 +111,11 @@ public:
 			
 	virtual safe_ptr<basic_frame> receive(int) override
 	{
-		if(frame_buffer_.size() > 1)
-		{
-			auto frame = frame_buffer_.front();
-			frame_buffer_.pop();
-			return last_frame_ = frame;
-		}
-		
 		auto consumer_frame = consumer_->receive();
-		if (consumer_frame == basic_frame::late())
-		{
-			return basic_frame::late();		
-		}
 
 		frame_number_++;
-		
-		frame_buffer_.push(consumer_frame);	
-		return receive(0);
+
+		return last_frame_ = consumer_frame;
 	}	
 
 	virtual safe_ptr<basic_frame> last_frame() const override
@@ -186,7 +125,7 @@ public:
 
 	virtual std::wstring print() const override
 	{
-		return L"layer[]";
+		return L"layer[" << layer_ << L"]";
 	}
 
 	virtual boost::property_tree::wptree info() const override
