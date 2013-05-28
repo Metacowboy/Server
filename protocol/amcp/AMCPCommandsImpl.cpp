@@ -783,8 +783,8 @@ bool LoadCommand::DoExecute()
 	//Perform loading of the clip
 	try
 	{
-		_parameters[0] = _parameters[0];
-		auto pFP = create_producer(GetChannel()->mixer(), _parameters, _parameters2);		
+		//_parameters[0] = _parameters[0];
+		auto pFP = create_producer(GetChannel()->mixer(), _parameters);		
 		GetChannel()->stage()->load(GetLayerIndex(), pFP, true);
 	
 		SetReplyString(TEXT("202 LOAD OK\r\n"));
