@@ -251,12 +251,20 @@ safe_ptr<core::frame_producer> create_producer(const safe_ptr<frame_factory>& my
 	auto producer = do_create_producer(my_frame_factory, params);
 	auto key_producer = frame_producer::empty();
 	
-	try // to find a key file.
+	std::wstring resource_name = L"";
+	// Infer the resource_type from the resource_name if the resource_name looks like a URI
+	auto tokens = core::parameters::protocol_split(params.at_original(0));
+	if (tokens[0].empty())
 	{
-		auto params_copy = params;
-		if(params_copy.size() > 0)
+		resource_name = params.at(0);
+	}
+
+	if (!resource_name.empty()) {
+		try // to find a key file.
 		{
-			auto resource_name = params_copy[0];
+			auto params_copy = params;
+			if(params_copy.size() > 0)
+			{
 			params_copy.set(0, resource_name + L"_A");
 			key_producer = do_create_producer(my_frame_factory, params_copy);			
 			if(key_producer == frame_producer::empty())
@@ -267,13 +275,13 @@ safe_ptr<core::frame_producer> create_producer(const safe_ptr<frame_factory>& my
 		}
 	}
 	catch(...){}
-
+	}
 	if(producer != frame_producer::empty() && key_producer != frame_producer::empty())
 		return create_separated_producer(producer, key_producer);
 	
 	if(producer == frame_producer::empty())
 	{
-		std::wstring str = params.get_original();
+		std::wstring str = params.original_line();
 		BOOST_THROW_EXCEPTION(file_not_found() << msg_info("No match found for supplied commands. Check syntax.") << arg_value_info(narrow(str)));
 	}
 

@@ -23,6 +23,7 @@
 
 #include "consumer/ffmpeg_consumer.h"
 #include "producer/ffmpeg_producer.h"
+//#include "producer2/ffmpeg_producer.h"
 
 #include <common/log/log.h>
 
@@ -46,6 +47,7 @@ extern "C"
 	#include <libswscale/swscale.h>
 	#include <libavutil/avutil.h>
 	#include <libavfilter/avfilter.h>
+	#include <libavdevice/avdevice.h>
 }
 
 namespace caspar { namespace ffmpeg {
@@ -201,6 +203,7 @@ void init()
 	av_lockmgr_register(ffmpeg_lock_callback);
 	av_log_set_callback(log_callback);
 
+	avdevice_register_all();
     avfilter_register_all();
 	//fix_yadif_filter_format_query();
 	av_register_all();
@@ -208,7 +211,7 @@ void init()
     avcodec_register_all();
 	
 	core::register_consumer_factory([](core::parameters const& params){return ffmpeg::create_consumer(params);});
-	core::register_producer_factory(create_producer);
+	core::register_producer_factory(ffmpeg::create_producer);
 }
 
 void uninit()
