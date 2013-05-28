@@ -783,8 +783,8 @@ bool LoadCommand::DoExecute()
 	//Perform loading of the clip
 	try
 	{
-		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
-		auto pFP = create_producer(GetChannel()->mixer(), _parameters);		
+		_parameters[0] = _parameters[0];
+		auto pFP = create_producer(GetChannel()->mixer(), _parameters, _parameters2);		
 		GetChannel()->stage()->load(GetLayerIndex(), pFP, true);
 	
 		SetReplyString(TEXT("202 LOAD OK\r\n"));
@@ -889,7 +889,7 @@ bool LoadbgCommand::DoExecute()
 	//Perform loading of the clip
 	try
 	{
-		//_parameters[0] = _parameters[0];
+		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
 
 		safe_ptr<core::frame_producer> pFP(frame_producer::empty());
 
@@ -936,7 +936,7 @@ bool LoadbgCommand::DoExecute()
 	catch(file_not_found&)
 	{		
 		std::wstring params2;
-		for(auto it = _parameters.begin(); it != _parameters.end(); ++it)
+		for(auto it = _parameters2.begin(); it != _parameters2.end(); ++it)
 			params2 += L" " + *it;
 		CASPAR_LOG(error) << L"File not found. No match found for parameters. Check syntax:" << params2;
 		SetReplyString(TEXT("404 LOADBG ERROR\r\n"));
