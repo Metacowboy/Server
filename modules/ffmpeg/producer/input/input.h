@@ -20,6 +20,7 @@
 */
 
 #pragma once
+#include "../ffmpeg_params.h"
 
 #include <common/memory/safe_ptr.h>
 
@@ -28,6 +29,7 @@
 #include <cstdint>
 
 #include <boost/noncopyable.hpp>
+#include <boost/thread/future.hpp>
 
 struct AVFormatContext;
 struct AVPacket;
@@ -45,7 +47,7 @@ namespace ffmpeg {
 class input : boost::noncopyable
 {
 public:
-	explicit input(const safe_ptr<diagnostics::graph>& graph, const std::wstring& filename, bool loop, uint32_t start, uint32_t length);
+	explicit input(const safe_ptr<diagnostics::graph>& graph, const std::wstring& filename, FFMPEG_Resource resource_type, bool loop, uint32_t start, uint32_t length, bool thumbnail_mode, const ffmpeg_params& vid_params);
 
 	bool try_pop(std::shared_ptr<AVPacket>& packet);
 	bool eof() const;
@@ -53,7 +55,7 @@ public:
 	void loop(bool value);
 	bool loop() const;
 
-	void seek(uint32_t target);
+	boost::unique_future<bool> seek(uint32_t target);
 
 	safe_ptr<AVFormatContext> context();
 private:

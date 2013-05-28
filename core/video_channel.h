@@ -21,11 +21,14 @@
 
 #pragma once
 
+#include "monitor/monitor.h"
+
 #include <common/memory/safe_ptr.h>
 
 #include <boost/noncopyable.hpp>
-
 #include <boost/property_tree/ptree_fwd.hpp>
+
+#include <agents.h>
 
 namespace caspar { namespace core {
 	
@@ -34,11 +37,21 @@ class mixer;
 class output;
 class ogl_device;
 struct video_format_desc;
+struct channel_layout;
 
 class video_channel : boost::noncopyable
 {
 public:
-	explicit video_channel(int index, const video_format_desc& format_desc, const safe_ptr<ogl_device>& ogl);
+
+	// Static Members
+
+	// Constructors
+
+	explicit video_channel(int index, const video_format_desc& format_desc, const safe_ptr<ogl_device>& ogl, const channel_layout& audio_channel_layout);
+
+	// Methods
+
+	// Properties
 
 	safe_ptr<stage> stage();
 	safe_ptr<mixer>	mixer();
@@ -50,6 +63,8 @@ public:
 	boost::property_tree::wptree info() const;
 
 	int index() const;
+	
+	monitor::source& monitor_output();
 
 private:
 	struct implementation;

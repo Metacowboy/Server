@@ -45,6 +45,7 @@ std::wstring media;
 std::wstring log;
 std::wstring ftemplate;
 std::wstring data;
+std::wstring thumbnails;
 boost::property_tree::wptree pt;
 
 void check_is_configured()
@@ -67,6 +68,19 @@ void configure(const std::wstring& filename)
 		log = widen(paths.get(L"log-path", initialPath + L"\\log\\"));
 		ftemplate = complete(wpath(widen(paths.get(L"template-path", initialPath + L"\\template\\")))).string();		
 		data = widen(paths.get(L"data-path", initialPath + L"\\data\\"));
+		thumbnails = widen(paths.get(L"thumbnails-path", initialPath + L"\\thumbnails\\"));
+
+		//Make sure that all paths have a trailing backslash
+		if(media.at(media.length()-1) != L'\\')
+			media.append(L"\\");
+		if(log.at(log.length()-1) != L'\\')
+			log.append(L"\\");
+		if(ftemplate.at(ftemplate.length()-1) != L'\\')
+			ftemplate.append(L"\\");
+		if(data.at(data.length()-1) != L'\\')
+			data.append(L"\\");
+		if(thumbnails.at(thumbnails.length()-1) != L'\\')
+			thumbnails.append(L"\\");
 
 		try
 		{
@@ -113,6 +127,10 @@ void configure(const std::wstring& filename)
 		auto data_path = boost::filesystem::wpath(data);
 		if(!boost::filesystem::exists(data_path))
 			boost::filesystem::create_directory(data_path);
+		
+		auto thumbnails_path = boost::filesystem::wpath(thumbnails);
+		if(!boost::filesystem::exists(thumbnails_path))
+			boost::filesystem::create_directory(thumbnails_path);
 	}
 	catch(...)
 	{
@@ -145,6 +163,12 @@ const std::wstring& data_folder()
 	return data;
 }
 
+const std::wstring& thumbnails_folder()
+{
+	check_is_configured();
+	return thumbnails;
+}
+
 #define QUOTE(str) #str
 #define EXPAND_AND_QUOTE(str) QUOTE(str)
 
@@ -154,7 +178,7 @@ const std::wstring& version()
 			EXPAND_AND_QUOTE(CASPAR_GEN)	"." 
 			EXPAND_AND_QUOTE(CASPAR_MAYOR)  "." 
 			EXPAND_AND_QUOTE(CASPAR_MINOR)  "." 
-			EXPAND_AND_QUOTE(CASPAR_REV)	" " 
+			CASPAR_REV	" " 
 			CASPAR_TAG);
 	return ver;
 }

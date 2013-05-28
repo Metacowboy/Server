@@ -145,7 +145,18 @@ class DataCommand : public AMCPCommandBase<false, AddToQueue, 1>
 	bool DoExecute();
 	bool DoExecuteStore();
 	bool DoExecuteRetrieve();
+	bool DoExecuteRemove();
 	bool DoExecuteList();
+};
+
+class ThumbnailCommand : public AMCPCommandBase<false, AddToQueue, 1>
+{
+	std::wstring print() const { return L"ThumbnailCommand";}
+	bool DoExecute();
+	bool DoExecuteRetrieve();
+	bool DoExecuteList();
+	bool DoExecuteGenerate();
+	bool DoExecuteGenerateAll();
 };
 
 class ClsCommand : public AMCPCommandBase<false, AddToQueue, 0>
@@ -194,23 +205,17 @@ class SetCommand : public AMCPCommandBase<true, AddToQueue, 2>
 	bool DoExecute();
 };
 
-//class KillCommand : public AMCPCommand
-//{
-//public:
-//	KillCommand() {}
-//	virtual bool DoExecute();
-//	virtual AMCPCommandCondition CheckConditions();
-//
-//	virtual bool NeedChannel() {
-//		return false;
-//	}
-//	virtual AMCPCommandScheduling GetDefaultScheduling() {
-//		return AddToQueue;
-//	}
-//	virtual int GetMinimumParameters() {
-//		return 0;
-//	}
-//};
+class KillCommand : public AMCPCommandBase<false, AddToQueue, 0>
+{
+	std::wstring print() const { return L"KillCommand";}
+	bool DoExecute();
+};
+
+class RestartCommand : public AMCPCommandBase<false, AddToQueue, 0>
+{
+	std::wstring print() const { return L"RestartCommand";}
+	bool DoExecute();
+};
 
 }	//namespace amcp
 }}	//namespace caspar

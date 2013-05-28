@@ -52,6 +52,14 @@ struct video_format
 		x1080p5000,
 		x1080p5994,
 		x1080p6000,
+		x2k2398,
+		x2k2400,
+		x2k2500,
+		x4k2398,
+		x4k2400,
+		x4k2500,
+		x4k2997,
+		x4k3000,
 		invalid,
 		count
 	};
@@ -100,8 +108,7 @@ struct video_format_desc
 	std::wstring			name;		// name of output format
 
 	size_t					audio_sample_rate;
-	size_t					audio_channels;
-	std::vector<size_t>		audio_cadence;
+	std::vector<size_t>		audio_cadence; // rotating optimal number of samples per frame
 
 	static const video_format_desc& get(video_format::type format);
 	static const video_format_desc& get(const std::wstring& name);

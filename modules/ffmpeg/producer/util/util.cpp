@@ -35,6 +35,7 @@
 #include <core/producer/frame/frame_factory.h>
 #include <core/producer/frame_producer.h>
 #include <core/mixer/write_frame.h>
+#include <core/mixer/audio/audio_util.h>
 
 #include <common/exception/exceptions.h>
 #include <common/utility/assert.h>
@@ -44,6 +45,7 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
 
 #if defined(_MSC_VER)
 #pragma warning (push)
@@ -171,12 +173,12 @@ int make_alpha_format(int format)
 	}
 }
 
-safe_ptr<core::write_frame> make_write_frame(const void* tag, const safe_ptr<AVFrame>& decoded_frame, const safe_ptr<core::frame_factory>& frame_factory, int hints)
+safe_ptr<core::write_frame> make_write_frame(const void* tag, const safe_ptr<AVFrame>& decoded_frame, const safe_ptr<core::frame_factory>& frame_factory, int hints, const core::channel_layout& audio_channel_layout)
 {			
 	static tbb::concurrent_unordered_map<int64_t, tbb::concurrent_queue<std::shared_ptr<SwsContext>>> sws_contexts_;
 	
 	if(decoded_frame->width < 1 || decoded_frame->height < 1)
-		return make_safe<core::write_frame>(tag);
+		return make_safe<core::write_frame>(tag, audio_channel_layout);
 
 	const auto width  = decoded_frame->width;
 	const auto height = decoded_frame->height;
@@ -207,7 +209,7 @@ safe_ptr<core::write_frame> make_write_frame(const void* tag, const safe_ptr<AVF
 		
 		auto target_desc = get_pixel_format_desc(target_pix_fmt, width, height);
 
-		write = frame_factory->create_frame(tag, target_desc);
+		write = frame_factory->create_frame(tag, target_desc, audio_channel_layout);
 		write->set_type(get_mode(*decoded_frame));
 
 		std::shared_ptr<SwsContext> sws_context;
@@ -258,7 +260,7 @@ safe_ptr<core::write_frame> make_write_frame(const void* tag, const safe_ptr<AVF
 	}
 	else
 	{
-		write = frame_factory->create_frame(tag, desc);
+		write = frame_factory->create_frame(tag, desc, audio_channel_layout);
 		write->set_type(get_mode(*decoded_frame));
 
 		for(int n = 0; n < static_cast<int>(desc.planes.size()); ++n)
@@ -390,38 +392,6 @@ double read_fps(AVFormatContext& context, double fail_value)
 	return fail_value;	
 }
 
-void fix_meta_data(AVFormatContext& context)
-{
-	auto video_index = av_find_best_stream(&context, AVMEDIA_TYPE_VIDEO, -1, -1, 0, 0);
-
-	if(video_index > -1)
-	{
-		auto video_stream   = context.streams[video_index];
-		auto video_context  = context.streams[video_index]->codec;
-						
-		if(boost::filesystem2::path(context.filename).extension() == ".flv")
-		{
-			try
-			{
-				auto meta = read_flv_meta_info(context.filename);
-				double fps = boost::lexical_cast<double>(meta["framerate"]);
-				video_stream->nb_frames = static_cast<int64_t>(boost::lexical_cast<double>(meta["duration"])*fps);
-			}
-			catch(...){}
-		}
-		else
-		{
-			auto stream_time = video_stream->time_base;
-			auto duration	 = video_stream->duration;
-			auto codec_time  = video_context->time_base;
-			auto ticks		 = video_context->ticks_per_frame;
-
-			if(video_stream->nb_frames == 0)
-				video_stream->nb_frames = (duration*stream_time.num*codec_time.den)/(stream_time.den*codec_time.num*ticks);	
-		}
-	}
-}
-
 safe_ptr<AVPacket> create_packet()
 {
 	safe_ptr<AVPacket> packet(new AVPacket, [](AVPacket* p)
@@ -445,16 +415,6 @@ safe_ptr<AVCodecContext> open_codec(AVFormatContext& context, enum AVMediaType t
 	return safe_ptr<AVCodecContext>(context.streams[index]->codec, tbb_avcodec_close);
 }
 
-safe_ptr<AVFormatContext> open_input(const std::wstring& filename)
-{
-	AVFormatContext* weak_context = nullptr;
-	THROW_ON_ERROR2(avformat_open_input(&weak_context, narrow(filename).c_str(), nullptr, nullptr), filename);
-	safe_ptr<AVFormatContext> context(weak_context, av_close_input_file);			
-	THROW_ON_ERROR2(avformat_find_stream_info(weak_context, nullptr), filename);
-	fix_meta_data(*context);
-	return context;
-}
-
 std::wstring print_mode(size_t width, size_t height, double fps, bool interlaced)
 {
 	std::wostringstream fps_ss;
@@ -463,18 +423,17 @@ std::wstring print_mode(size_t width, size_t height, double fps, bool interlaced
 	return boost::lexical_cast<std::wstring>(width) + L"x" + boost::lexical_cast<std::wstring>(height) + (!interlaced ? L"p" : L"i") + fps_ss.str();
 }
 
-bool is_valid_file(const std::wstring filename)
-{			
-	static const std::vector<std::wstring> invalid_exts = boost::assign::list_of(L".png")(L".tga")(L".bmp")(L".jpg")(L".jpeg")(L".gif")(L".tiff")(L".tif")(L".jp2")(L".jpx")(L".j2k")(L".j2c")(L".swf")(L".ct");
-	static std::vector<std::wstring>	   valid_exts   = boost::assign::list_of(L".m2t")(L".mov")(L".mp4")(L".dv")(L".flv")(L".mpg")(L".wav")(L".mp3")(L".dnxhd")(L".h264")(L".prores");
+bool is_valid_file(const std::wstring filename, const std::vector<std::wstring>& invalid_exts)
+{
+	static std::vector<std::wstring> valid_exts = boost::assign::list_of(L".m2t")(L".mov")(L".mp4")(L".dv")(L".flv")(L".mpg")(L".wav")(L".mp3")(L".dnxhd")(L".h264")(L".prores");
 
 	auto ext = boost::to_lower_copy(boost::filesystem::wpath(filename).extension());
 		
-	if(std::find(valid_exts.begin(), valid_exts.end(), ext) != valid_exts.end())
-		return true;	
-	
 	if(std::find(invalid_exts.begin(), invalid_exts.end(), ext) != invalid_exts.end())
 		return false;	
+
+	if(std::find(valid_exts.begin(), valid_exts.end(), ext) != valid_exts.end())
+		return true;	
 
 	auto filename2 = narrow(filename);
 
@@ -499,6 +458,25 @@ bool is_valid_file(const std::wstring filename)
 	return av_probe_input_format2(&pb, true, &score) != nullptr;
 }
 
+bool is_valid_file(const std::wstring filename)
+{
+	static const std::vector<std::wstring> invalid_exts = boost::assign::list_of(L".png")(L".tga")(L".bmp")(L".jpg")(L".jpeg")(L".gif")(L".tiff")(L".tif")(L".jp2")(L".jpx")(L".j2k")(L".j2c")(L".swf")(L".ct");
+	
+	return is_valid_file(filename, invalid_exts);
+}
+
+std::wstring probe_stem(const std::wstring stem, const std::vector<std::wstring>& invalid_exts)
+{
+	auto stem2 = boost::filesystem2::wpath(stem);
+	auto dir = stem2.parent_path();
+	for(auto it = boost::filesystem2::wdirectory_iterator(dir); it != boost::filesystem2::wdirectory_iterator(); ++it)
+	{
+		if(boost::iequals(it->path().stem(), stem2.filename()) && is_valid_file(it->path().file_string(), invalid_exts))
+			return it->path().file_string();
+	}
+	return L"";
+}
+
 std::wstring probe_stem(const std::wstring stem)
 {
 	auto stem2 = boost::filesystem2::wpath(stem);
@@ -510,6 +488,42 @@ std::wstring probe_stem(const std::wstring stem)
 	}
 	return L"";
 }
+
+core::channel_layout get_audio_channel_layout(
+		const AVCodecContext& context, const std::wstring& custom_channel_order)
+{
+	if (!custom_channel_order.empty())
+	{
+		auto layout = core::create_custom_channel_layout(
+				custom_channel_order,
+				core::default_channel_layout_repository());
+
+		layout.num_channels = context.channels;
+
+		return layout;
+	}
+
+	int64_t ch_layout = context.channel_layout;
+
+	if (ch_layout == 0)
+		ch_layout = av_get_default_channel_layout(context.channels);
+
+	switch (ch_layout) // TODO: refine this auto-detection
+	{
+	case AV_CH_LAYOUT_MONO:
+		return core::default_channel_layout_repository().get_by_name(L"MONO");
+	case AV_CH_LAYOUT_STEREO:
+		return core::default_channel_layout_repository().get_by_name(L"STEREO");
+	case AV_CH_LAYOUT_5POINT1:
+	case AV_CH_LAYOUT_5POINT1_BACK:
+		return core::default_channel_layout_repository().get_by_name(L"SMPTE");
+	case AV_CH_LAYOUT_7POINT1:
+		return core::default_channel_layout_repository().get_by_name(L"DOLBYE");
+	}
+
+	return core::create_unspecified_layout(context.channels);
+}
+
 //
 //void av_dup_frame(AVFrame* frame)
 //{

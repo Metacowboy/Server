@@ -36,6 +36,7 @@
 #include <common/os/windows/system_info.h>
 #include <common/utility/string.h>
 #include <common/utility/utf8conv.h>
+#include <common/utility/base64.h>
 
 #include <core/producer/frame_producer.h>
 #include <core/video_format.h>
@@ -76,6 +77,9 @@
 #include <boost/locale.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/algorithm/copy.hpp>
+#include <boost/archive/iterators/base64_from_binary.hpp>
+#include <boost/archive/iterators/insert_linebreaks.hpp>
+#include <boost/archive/iterators/transform_width.hpp>
 
 #include <tbb/concurrent_unordered_map.h>
 
@@ -104,6 +108,23 @@
 namespace caspar { namespace protocol {
 
 using namespace core;
+
+std::wstring read_file_base64(const boost::filesystem::wpath& file)
+{
+	using namespace boost::archive::iterators;
+
+	boost::filesystem::ifstream filestream(file, std::ios::binary);
+
+	if (!filestream)
+		return L"";
+
+	auto length = boost::filesystem::file_size(file);
+	std::vector<char> bytes;
+	bytes.resize(length);
+	filestream.read(bytes.data(), length);
+
+	return widen(to_base64(bytes.data(), length));
+}
 
 std::wstring read_utf8_file(const boost::filesystem::wpath& file)
 {
@@ -509,6 +530,11 @@ bool MixerCommand::DoExecute()
 			int layer = GetLayerIndex();
 			GetChannel()->mixer()->set_blend_mode(GetLayerIndex(), get_blend_mode(blend_str));	
 		}
+		else if(_parameters[0] == L"MASTERVOLUME")
+		{
+			float master_volume = boost::lexical_cast<float>(_parameters.at(1));
+			GetChannel()->mixer()->set_master_volume(master_volume);
+		}
 		else if(_parameters[0] == L"BRIGHTNESS")
 		{
 			auto value = boost::lexical_cast<double>(_parameters.at(1));
@@ -725,7 +751,7 @@ bool LoadCommand::DoExecute()
 	try
 	{
 		_parameters[0] = _parameters[0];
-		auto pFP = create_producer(GetChannel()->mixer(), _parameters);		
+		auto pFP = create_producer(GetChannel()->mixer(), _parameters, _parameters2);		
 		GetChannel()->stage()->load(GetLayerIndex(), pFP, true);
 	
 		SetReplyString(TEXT("202 LOAD OK\r\n"));
@@ -831,7 +857,7 @@ bool LoadbgCommand::DoExecute()
 	try
 	{
 		_parameters[0] = _parameters[0];
-		auto pFP = create_producer(GetChannel()->mixer(), _parameters);
+		auto pFP = create_producer(GetChannel()->mixer(), _parameters, _parameters2);
 		if(pFP == frame_producer::empty())
 			BOOST_THROW_EXCEPTION(file_not_found() << msg_info(_parameters.size() > 0 ? narrow(_parameters[0]) : ""));
 
@@ -847,7 +873,7 @@ bool LoadbgCommand::DoExecute()
 	catch(file_not_found&)
 	{		
 		std::wstring params2;
-		for(auto it = _parameters.begin(); it != _parameters.end(); ++it)
+		for(auto it = _parameters2.begin(); it != _parameters2.end(); ++it)
 			params2 += L" " + *it;
 		CASPAR_LOG(error) << L"File not found. No match found for parameters. Check syntax:" << params2;
 		SetReplyString(TEXT("404 LOADBG ERROR\r\n"));
@@ -888,7 +914,7 @@ bool PlayCommand::DoExecute()
 			lbg.SetChannelIndex(GetChannelIndex());
 			lbg.SetLayerIntex(GetLayerIndex());
 			lbg.SetClientInfo(GetClientInfo());
-			for(auto it = _parameters.begin(); it != _parameters.end(); ++it)
+			for(auto it = _parameters2.begin(); it != _parameters2.end(); ++it)
 				lbg.AddParameter(*it);
 			if(!lbg.Execute())
 				throw std::exception();
@@ -1276,6 +1302,8 @@ bool DataCommand::DoExecute()
 		return DoExecuteStore();
 	else if(command == TEXT("RETRIEVE"))
 		return DoExecuteRetrieve();
+	else if(command == TEXT("REMOVE"))
+		return DoExecuteRemove();
 	else if(command == TEXT("LIST"))
 		return DoExecuteList();
 
@@ -1294,6 +1322,12 @@ bool DataCommand::DoExecuteStore()
 	std::wstring filename = env::data_folder();
 	filename.append(_parameters[1]);
 	filename.append(TEXT(".ftd"));
+
+	auto data_path = boost::filesystem::wpath(
+			boost::filesystem::wpath(filename).parent_path());
+	
+	if(!boost::filesystem::exists(data_path))
+		boost::filesystem::create_directories(data_path);
 
 	std::wofstream datafile(filename.c_str());
 
@@ -1326,31 +1360,60 @@ bool DataCommand::DoExecuteRetrieve()
 
 	std::wstring file_contents = read_file(boost::filesystem::wpath(filename));
 
-	//std::wifstream datafile(filename.c_str());
-
 	if (file_contents.empty()) 
 	{
 		SetReplyString(TEXT("404 DATA RETRIEVE ERROR\r\n"));
 		return false;
 	}
 
-	std::wstringstream reply(TEXT("201 DATA RETRIEVE OK\r\n"));
-	/*std::wstring line;
+	std::wstringstream reply;
+	reply << TEXT("201 DATA RETRIEVE OK\r\n");
+
+	std::wstringstream file_contents_stream(file_contents);
+	std::wstring line;
 	bool bFirstLine = true;
-	while(std::getline(datafile, line))
+	
+	while(std::getline(file_contents_stream, line))
 	{
 		if(!bFirstLine)
-			reply << "\\n";
+			reply << "\n";
 		else
 			bFirstLine = false;
 
 		reply << line;
 	}
-	datafile.close();*/
 
-	reply << file_contents;
 	reply << "\r\n";
 	SetReplyString(reply.str());
+	return true;
+}
+
+bool DataCommand::DoExecuteRemove() 
+{ 
+	if (_parameters.size() < 2) 
+	{
+		SetReplyString(TEXT("402 DATA REMOVE ERROR\r\n"));
+		return false;
+	}
+
+	std::wstring filename = env::data_folder();
+	filename.append(_parameters[1]);
+	filename.append(TEXT(".ftd"));
+
+	if (!boost::filesystem::exists(filename)) 
+	{
+		SetReplyString(TEXT("404 DATA REMOVE ERROR\r\n"));
+		return false;
+	}
+
+	if (!boost::filesystem::remove(filename))
+	{
+		SetReplyString(TEXT("403 DATA REMOVE ERROR\r\n"));
+		return false;
+	}
+
+	SetReplyString(TEXT("201 DATA REMOVE OK\r\n"));
+
 	return true;
 }
 
@@ -1380,6 +1443,124 @@ bool DataCommand::DoExecuteList()
 
 	SetReplyString(boost::to_upper_copy(replyString.str()));
 	return true;
+}
+
+bool ThumbnailCommand::DoExecute()
+{
+	std::wstring command = _parameters[0];
+
+	if (command == TEXT("RETRIEVE"))
+		return DoExecuteRetrieve();
+	else if (command == TEXT("LIST"))
+		return DoExecuteList();
+	else if (command == TEXT("GENERATE"))
+		return DoExecuteGenerate();
+	else if (command == TEXT("GENERATE_ALL"))
+		return DoExecuteGenerateAll();
+
+	SetReplyString(TEXT("403 THUMBNAIL ERROR\r\n"));
+	return false;
+}
+
+bool ThumbnailCommand::DoExecuteRetrieve() 
+{
+	if(_parameters.size() < 2) 
+	{
+		SetReplyString(TEXT("402 THUMBNAIL RETRIEVE ERROR\r\n"));
+		return false;
+	}
+
+	std::wstring filename = env::thumbnails_folder();
+	filename.append(_parameters[1]);
+	filename.append(TEXT(".png"));
+
+	std::wstring file_contents = read_file_base64(boost::filesystem::wpath(filename));
+
+	if (file_contents.empty())
+	{
+		SetReplyString(TEXT("404 THUMBNAIL RETRIEVE ERROR\r\n"));
+		return false;
+	}
+
+	std::wstringstream reply;
+
+	reply << L"201 THUMBNAIL RETRIEVE OK\r\n";
+	reply << file_contents;
+	reply << L"\r\n";
+	SetReplyString(reply.str());
+	return true;
+}
+
+bool ThumbnailCommand::DoExecuteList()
+{
+	std::wstringstream replyString;
+	replyString << TEXT("200 THUMBNAIL LIST OK\r\n");
+
+	for (boost::filesystem::wrecursive_directory_iterator itr(env::thumbnails_folder()), end; itr != end; ++itr)
+	{			
+		if(boost::filesystem::is_regular_file(itr->path()))
+		{
+			if(!boost::iequals(itr->path().extension(), L".png"))
+				continue;
+			
+			auto relativePath = boost::filesystem::wpath(itr->path().file_string().substr(env::thumbnails_folder().size()-1, itr->path().file_string().size()));
+			
+			auto str = relativePath.replace_extension(L"").external_file_string();
+			if(str[0] == '\\' || str[0] == '/')
+				str = std::wstring(str.begin() + 1, str.end());
+
+			auto mtime = boost::filesystem::last_write_time(itr->path());
+			auto mtime_readable = boost::posix_time::to_iso_string(boost::posix_time::from_time_t(mtime));
+			auto file_size = boost::filesystem::file_size(itr->path());
+
+			replyString << L"\"" << str << L"\" " << widen(mtime_readable) << L" " << file_size << L"\r\n";
+		}
+	}
+	
+	replyString << TEXT("\r\n");
+
+	SetReplyString(boost::to_upper_copy(replyString.str()));
+	return true;
+}
+
+bool ThumbnailCommand::DoExecuteGenerate()
+{
+	if (_parameters.size() < 2) 
+	{
+		SetReplyString(L"402 THUMBNAIL GENERATE ERROR\r\n");
+		return false;
+	}
+
+	auto thumb_gen = GetThumbGenerator();
+
+	if (thumb_gen)
+	{
+		thumb_gen->generate(_parameters[1]);
+		SetReplyString(L"200 THUMBNAIL GENERATE OK\r\n");
+		return true;
+	}
+	else
+	{
+		SetReplyString(L"501 THUMBNAIL GENERATE ERROR\r\n");
+		return false;
+	}
+}
+
+bool ThumbnailCommand::DoExecuteGenerateAll()
+{
+	auto thumb_gen = GetThumbGenerator();
+
+	if (thumb_gen)
+	{
+		thumb_gen->generate_all();
+		SetReplyString(L"200 THUMBNAIL GENERATE_ALL OK\r\n");
+		return true;
+	}
+	else
+	{
+		SetReplyString(L"501 THUMBNAIL GENERATE_ALL ERROR\r\n");
+		return false;
+	}
 }
 
 bool CinfCommand::DoExecute()
@@ -1640,6 +1821,17 @@ bool SetCommand::DoExecute()
 	return true;
 }
 
+bool KillCommand::DoExecute()
+{
+	GetShutdownServerNow().set_value(false); // False for not attempting to restart.
+	return true;
+}
+
+bool RestartCommand::DoExecute()
+{
+	GetShutdownServerNow().set_value(true); // True for attempting to restart
+	return true;
+}
 
 }	//namespace amcp
 }}	//namespace caspar

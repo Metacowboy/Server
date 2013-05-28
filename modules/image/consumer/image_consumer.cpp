@@ -37,17 +37,42 @@
 #include <tbb/concurrent_queue.h>
 
 #include <FreeImage.h>
-
 #include <vector>
+#include <algorithm>
+
+#include "../util/image_view.h"
 
 namespace caspar { namespace image {
-	
+
+void write_cropped_png(
+		const safe_ptr<core::read_frame>& frame,
+		const core::video_format_desc& format_desc,
+		const boost::filesystem::wpath& output_file,
+		int width,
+		int height)
+{
+	auto bitmap = std::shared_ptr<FIBITMAP>(FreeImage_Allocate(width, height, 32), FreeImage_Unload);
+	image_view<bgra_pixel> destination_view(FreeImage_GetBits(bitmap.get()), width, height);
+	image_view<bgra_pixel> complete_frame(const_cast<uint8_t*>(frame->image_data().begin()), format_desc.width, format_desc.height);
+	auto thumbnail_view = complete_frame.subview(0, 0, width, height);
+
+	std::copy(thumbnail_view.begin(), thumbnail_view.end(), destination_view.begin());
+	FreeImage_FlipVertical(bitmap.get());
+	FreeImage_SaveU(FIF_PNG, bitmap.get(), output_file.string().c_str(), 0);
+}
+
 struct image_consumer : public core::frame_consumer
 {
-	core::video_format_desc					format_desc_;
+	core::video_format_desc	format_desc_;
+	std::wstring			filename_;
 public:
 
 	// frame_consumer
+
+	image_consumer(const std::wstring& filename)
+		: filename_(filename)
+	{
+	}
 
 	virtual void initialize(const core::video_format_desc& format_desc, int) override
 	{
@@ -57,16 +82,23 @@ public:
 	virtual boost::unique_future<bool> send(const safe_ptr<core::read_frame>& frame) override
 	{				
 		auto format_desc = format_desc_;
-		boost::thread async([format_desc, frame]
+		auto filename = filename_;
+
+		boost::thread async([format_desc, frame, filename]
 		{
 			try
 			{
-				auto filename = narrow(env::data_folder()) +  boost::posix_time::to_iso_string(boost::posix_time::second_clock::local_time()) + ".png";
+				auto filename2 = filename;
+
+				if (filename2.empty())
+					filename2 = env::media_folder() + widen(boost::posix_time::to_iso_string(boost::posix_time::second_clock::local_time())) + L".png";
+				else
+					filename2 = env::media_folder() + filename2 + L".png";
 
 				auto bitmap = std::shared_ptr<FIBITMAP>(FreeImage_Allocate(format_desc.width, format_desc.height, 32), FreeImage_Unload);
 				memcpy(FreeImage_GetBits(bitmap.get()), frame->image_data().begin(), frame->image_size());
 				FreeImage_FlipVertical(bitmap.get());
-				FreeImage_Save(FIF_PNG, bitmap.get(), filename.c_str(), 0);
+				FreeImage_SaveU(FIF_PNG, bitmap.get(), filename2.c_str(), 0);
 			}
 			catch(...)
 			{
@@ -106,7 +138,12 @@ safe_ptr<core::frame_consumer> create_consumer(const std::vector<std::wstring>& 
 	if(params.size() < 1 || params[0] != L"IMAGE")
 		return core::frame_consumer::empty();
 
-	return make_safe<image_consumer>();
+	std::wstring filename;
+
+	if (params.size() > 1)
+		filename = params[1];
+
+	return make_safe<image_consumer>(filename);
 }
 
 }}

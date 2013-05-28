@@ -53,7 +53,14 @@ inline std::shared_ptr<core::video_channel> GetChannelSafe(unsigned int index, c
 	return index < channels.size() ? std::shared_ptr<core::video_channel>(channels[index]) : nullptr;
 }
 
-AMCPProtocolStrategy::AMCPProtocolStrategy(const std::vector<safe_ptr<core::video_channel>>& channels) : channels_(channels) {
+AMCPProtocolStrategy::AMCPProtocolStrategy(
+		const std::vector<safe_ptr<core::video_channel>>& channels,
+		const std::shared_ptr<core::thumbnail_generator>& thumb_gen,
+		boost::promise<bool>& shutdown_server_now)
+	: channels_(channels)
+	, thumb_gen_(thumb_gen)
+	, shutdown_server_now_(shutdown_server_now)
+{
 	AMCPCommandQueuePtr pGeneralCommandQueue(new AMCPCommandQueue());
 	commandQueues_.push_back(pGeneralCommandQueue);
 
@@ -79,14 +86,18 @@ AMCPProtocolStrategy::~AMCPProtocolStrategy() {
 void AMCPProtocolStrategy::Parse(const TCHAR* pData, int charCount, ClientInfoPtr pClientInfo)
 {
 	size_t pos;
-	std::wstring recvData(pData, charCount);
-	std::wstring availibleData = (pClientInfo != nullptr ? pClientInfo->currentMessage_ : L"") + recvData;
+	size_t oldLength = pClientInfo->currentMessage_.length();
+
+	if(pClientInfo->currentMessage_.capacity() < (oldLength + charCount))
+		pClientInfo->currentMessage_.reserve(8192 * 4);
+
+	pClientInfo->currentMessage_.append(pData, charCount);
 
 	while(true) {
-		pos = availibleData.find(MessageDelimiter);
+		pos = pClientInfo->currentMessage_.find(MessageDelimiter, (oldLength>(MessageDelimiter.size()-1)) ? oldLength-(MessageDelimiter.size()-1) : 0);
 		if(pos != std::wstring::npos)
 		{
-			std::wstring message = availibleData.substr(0,pos);
+			std::wstring message = pClientInfo->currentMessage_.substr(0,pos);
 
 			//This is where a complete message gets taken care of
 			if(message.length() > 0) {
@@ -94,10 +105,10 @@ void AMCPProtocolStrategy::Parse(const TCHAR* pData, int charCount, ClientInfoPt
 			}
 
 			std::size_t nextStartPos = pos + MessageDelimiter.length();
-			if(nextStartPos < availibleData.length())
-				availibleData = availibleData.substr(nextStartPos);
+			if(nextStartPos < pClientInfo->currentMessage_.length())
+				pClientInfo->currentMessage_ = pClientInfo->currentMessage_.substr(nextStartPos);
 			else {
-				availibleData.clear();
+				pClientInfo->currentMessage_.clear();
 				break;
 			}
 		}
@@ -106,13 +117,14 @@ void AMCPProtocolStrategy::Parse(const TCHAR* pData, int charCount, ClientInfoPt
 			break;
 		}
 	}
-	if(pClientInfo)
-		pClientInfo->currentMessage_ = availibleData;
 }
 
 void AMCPProtocolStrategy::ProcessMessage(const std::wstring& message, ClientInfoPtr& pClientInfo)
 {	
-	CASPAR_LOG(info) << L"Received message from " << pClientInfo->print() << ": " << message << L"\\r\\n";
+	if(message.length() < 512)
+		CASPAR_LOG(info) << L"Received message from " << pClientInfo->print() << ": " << message << L"\\r\\n";
+	else
+		CASPAR_LOG(info) << L"Received long message from " << pClientInfo->print() << ": " << message.substr(0, 510) << " [...]\\r\\n";
 	
 	bool bError = true;
 	MessageParserState state = New;
@@ -187,6 +199,8 @@ AMCPCommandPtr AMCPProtocolStrategy::InterpretCommandString(const std::wstring& 
 			else
 			{
 				pCommand->SetChannels(channels_);
+				pCommand->SetThumbGenerator(thumb_gen_);
+				pCommand->SetShutdownServerNow(shutdown_server_now_);
 				//Set scheduling
 				if(commandSwitch.size() > 0) {
 					transform(commandSwitch.begin(), commandSwitch.end(), commandSwitch.begin(), toupper);
@@ -323,14 +337,13 @@ AMCPCommandPtr AMCPProtocolStrategy::CommandFactory(const std::wstring& str)
 	else if(s == TEXT("VERSION"))		return std::make_shared<VersionCommand>();
 	else if(s == TEXT("BYE"))			return std::make_shared<ByeCommand>();
 	else if(s == TEXT("SET"))			return std::make_shared<SetCommand>();
+	else if(s == TEXT("THUMBNAIL"))		return std::make_shared<ThumbnailCommand>();
 	//else if(s == TEXT("MONITOR"))
 	//{
 	//	result = AMCPCommandPtr(new MonitorCommand());
 	//}
-	//else if(s == TEXT("KILL"))
-	//{
-	//	result = AMCPCommandPtr(new KillCommand());
-	//}
+	else if(s == TEXT("KILL"))			return std::make_shared<KillCommand>();
+	else if(s == TEXT("RESTART"))		return std::make_shared<RestartCommand>();
 	return nullptr;
 }
 
