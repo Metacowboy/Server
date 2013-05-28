@@ -34,7 +34,6 @@
 #include <core/video_channel.h>
 #include <core/producer/stage.h>
 #include <core/consumer/output.h>
-#include <core/consumer/synchronizing/synchronizing_consumer.h>
 #include <core/thumbnail_generator.h>
 
 #include <modules/bluefish/bluefish.h>
@@ -137,12 +136,19 @@ struct server::implementation : boost::noncopyable
 	{
 		register_default_channel_layouts(default_channel_layout_repository());
 		register_default_mix_configs(default_mix_config_repository());
-		parse_channel_layouts(
-				default_channel_layout_repository(),
-				pt.get_child(L"configuration.audio.channel-layouts"));
-		parse_mix_configs(
-				default_mix_config_repository(),
-				pt.get_child(L"configuration.audio.mix-configs"));
+
+		auto channel_layouts =
+			pt.get_child_optional(L"configuration.audio.channel-layouts");
+		auto mix_configs =
+			pt.get_child_optional(L"configuration.audio.mix-configs");
+
+		if (channel_layouts)
+			parse_channel_layouts(
+					default_channel_layout_repository(), *channel_layouts);
+
+		if (mix_configs)
+			parse_mix_configs(
+					default_mix_config_repository(), *mix_configs);
 	}
 				
 	void setup_channels(const boost::property_tree::wptree& pt)
@@ -166,17 +172,11 @@ struct server::implementation : boost::noncopyable
 				{
 					channels_.back()->output()->add(consumer);
 				});
-
-			// Add all consumers before starting channel.
-			channels_.back()->start_channel();
 		}
 
 		// Dummy diagnostics channel
 		if(env::properties().get(L"configuration.channel-grid", false))
-		{
 			channels_.push_back(make_safe<video_channel>(channels_.size()+1, core::video_format_desc::get(core::video_format::x576p2500), ogl_, default_channel_layout_repository().get_by_name(L"STEREO")));
-			channels_.back()->start_channel();
-		}
 	}
 
 	template<typename Base>
@@ -210,8 +210,6 @@ struct server::implementation : boost::noncopyable
 					on_consumer(ffmpeg::create_consumer(xml_consumer.second));						
 				else if (name == L"system-audio")
 					on_consumer(oal::create_consumer());
-				else if (name == L"synchronizing")
-					on_consumer(make_safe<core::synchronizing_consumer>(create_consumers<core::synchronizable_consumer>(xml_consumer.second)));
 				else if (name != L"<xmlcomment>")
 					CASPAR_LOG(warning) << "Invalid consumer: " << widen(name);	
 			}
