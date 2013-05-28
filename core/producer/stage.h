@@ -70,6 +70,7 @@ public:
 	void add_layer_consumer(int layer, const std::shared_ptr<write_frame_consumer>& layer_consumer);
 	void remove_layer_consumer(int layer);
 
+
 	boost::unique_future<std::wstring>				call(int index, bool foreground, const std::wstring& param);
 	boost::unique_future<safe_ptr<frame_producer>>	foreground(int index);
 	boost::unique_future<safe_ptr<frame_producer>>	background(int index);

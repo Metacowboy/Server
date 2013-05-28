@@ -141,8 +141,8 @@ public:
 
 			std::map<int, safe_ptr<basic_frame>> frames;
 		
-			BOOST_FOREACH(auto& layer, layers_)			
-				frames[layer.first] = basic_frame::empty();	
+			for(auto it = layers_.begin(); it != layers_.end(); ++it)
+				frames[it->first] = basic_frame::empty();	
 
 			tbb::parallel_for_each(layers_.begin(), layers_.end(), [&](std::map<int, layer>::value_type& layer) 
 			{

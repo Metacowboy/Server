@@ -82,14 +82,14 @@
 
 /* Return codes
 
-100 [action]			Information om att något har hänt  
-101 [action]			Information om att något har hänt, en rad data skickas  
+100 [action]			Information om att nï¿½got har hï¿½nt  
+101 [action]			Information om att nï¿½got har hï¿½nt, en rad data skickas  
 
-202 [kommando] OK		Kommandot har utförts  
-201 [kommando] OK		Kommandot har utförts, och en rad data skickas tillbaka  
-200 [kommando] OK		Kommandot har utförts, och flera rader data skickas tillbaka. Avslutas med tomrad  
+202 [kommando] OK		Kommandot har utfï¿½rts  
+201 [kommando] OK		Kommandot har utfï¿½rts, och en rad data skickas tillbaka  
+200 [kommando] OK		Kommandot har utfï¿½rts, och flera rader data skickas tillbaka. Avslutas med tomrad  
 
-400 ERROR				Kommandot kunde inte förstås  
+400 ERROR				Kommandot kunde inte fï¿½rstï¿½s  
 401 [kommando] ERROR	Ogiltig kanal  
 402 [kommando] ERROR	Parameter saknas  
 403 [kommando] ERROR	Ogiltig parameter  
@@ -97,7 +97,7 @@
 
 500 FAILED				Internt configurationfel  
 501 [kommando] FAILED	Internt configurationfel  
-502 [kommando] FAILED	Oläslig mediafil  
+502 [kommando] FAILED	Olï¿½slig mediafil  
 
 600 [kommando] FAILED	funktion ej implementerad
 */
@@ -783,7 +783,7 @@ bool LoadCommand::DoExecute()
 	//Perform loading of the clip
 	try
 	{
-		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
+		//_parameters[0] = _parameters[0];
 		auto pFP = create_producer(GetChannel()->mixer(), _parameters);		
 		GetChannel()->stage()->load(GetLayerIndex(), pFP, true);
 	
@@ -890,7 +890,37 @@ bool LoadbgCommand::DoExecute()
 	try
 	{
 		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
-		auto pFP = create_producer(GetChannel()->mixer(), _parameters);
+
+		safe_ptr<core::frame_producer> pFP(frame_producer::empty());
+
+		// Test to see if the parameters could be a route://<channel>-<layer> or <channel>-<layer> in which case use the layer_producer
+		// e.g. LOADBG 1-2 route://3-4
+		// Loads a producer on Channel 1 Layer 2 that is a copy of the producer on Channel 3 Layer 4
+		auto tokens = parameters::protocol_split(_parameters2[0]);
+		auto src_channel_layer_token = tokens[0] == L"route" ? tokens[1] : _parameters.at_original(0);
+		std::vector<std::wstring> src_channel_layer;
+		boost::split(src_channel_layer, src_channel_layer_token, boost::is_any_of("-"));
+
+		if (src_channel_layer.size() == 2) // It looks like a route
+		{
+			int src_channel_index = boost::lexical_cast<int>(src_channel_layer[0]);
+			int layer = boost::lexical_cast<int>(src_channel_layer[1]);
+
+			auto channels = GetChannels();
+			auto src_channel = std::find_if(
+				channels.begin(), 
+				channels.end(), 
+				[src_channel_index](const safe_ptr<core::video_channel>& item) { return item->index() == src_channel_index; }
+			);
+			if (src_channel == channels.end())
+				BOOST_THROW_EXCEPTION(null_argument() << msg_info("src channel not found"));
+			auto stage = (*src_channel)->stage();
+
+			pFP = create_layer_producer(GetChannel()->mixer(), stage, layer);
+		} else // Try the producer factory
+		{
+			pFP = create_producer(GetChannel()->mixer(), _parameters);
+		}
 		if(pFP == frame_producer::empty())
 			BOOST_THROW_EXCEPTION(file_not_found() << msg_info(_parameters.size() > 0 ? narrow(_parameters[0]) : ""));
 
@@ -906,7 +936,7 @@ bool LoadbgCommand::DoExecute()
 	catch(file_not_found&)
 	{		
 		std::wstring params2;
-		for(auto it = _parameters.begin(); it != _parameters.end(); ++it)
+		for(auto it = _parameters2.begin(); it != _parameters2.end(); ++it)
 			params2 += L" " + *it;
 		CASPAR_LOG(error) << L"File not found. No match found for parameters. Check syntax:" << params2;
 		SetReplyString(TEXT("404 LOADBG ERROR\r\n"));
@@ -943,6 +973,7 @@ bool PlayCommand::DoExecute()
 		if(!_parameters.empty())
 		{
 			LoadbgCommand lbg;
+			lbg.SetChannels(GetChannels());
 			lbg.SetChannel(GetChannel());
 			lbg.SetChannelIndex(GetChannelIndex());
 			lbg.SetLayerIntex(GetLayerIndex());
