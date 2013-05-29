@@ -733,36 +733,62 @@ bool RemoveCommand::DoExecute()
 	}
 }
 
-bool RouteCommand::DoExecute()
-{	
-	try
+safe_ptr<core::frame_producer> RouteCommand::TryCreateProducer(AMCPCommand& command, std::wstring const& uri)
+{
+	safe_ptr<core::frame_producer> pFP(frame_producer::empty());
+
+	auto tokens = parameters::protocol_split(uri);
+	auto src_channel_layer_token = tokens[0] == L"route" ? tokens[1] : uri;
+	std::vector<std::wstring> src_channel_layer;
+	boost::split(src_channel_layer, src_channel_layer_token, boost::is_any_of("-"));
+
+	if (tokens[0] == L"route" || src_channel_layer.size() == 2) // It looks like a route
 	{
-		// ROUTE 1-2 3-4
-		// Creates a producer on Channel 1 Layer 2 that is a copy of the producer on Channel 3 Layer 4
-
-		auto src_channel_layer_token = _parameters[0];
-		std::vector<std::wstring> src_channel_layer;
-		boost::split(src_channel_layer, src_channel_layer_token, boost::is_any_of("-"));
-
+		// Find the source channel
 		int src_channel_index = boost::lexical_cast<int>(src_channel_layer[0]);
-		int layer = boost::lexical_cast<int>(src_channel_layer[1]);
-
-		auto channels = GetChannels();
+		auto channels = command.GetChannels();
 		auto src_channel = std::find_if(
 			channels.begin(), 
 			channels.end(), 
 			[src_channel_index](const safe_ptr<core::video_channel>& item) { return item->index() == src_channel_index; }
 		);
-		// TODO Check for not exist and throw
-		auto stage = (*src_channel)->stage();
+		if (src_channel == channels.end())
+			BOOST_THROW_EXCEPTION(null_argument() << msg_info("src channel not found"));
 
-		auto frame_producer = create_layer_producer(GetChannel()->mixer(), stage, layer);
-		GetChannel()->stage()->load(GetLayerIndex(), frame_producer, true);
-		GetChannel()->stage()->play(GetLayerIndex());
+		// Find the source layer (if one is given)
+		int src_layer_index = -1;
+		if (src_channel_layer.size() > 1 && !src_channel_layer[1].empty())
+		{
+			src_layer_index = boost::lexical_cast<int>(src_channel_layer[1]);
+		}
 
-		SetReplyString(TEXT("202 ROUTE OK\r\n"));
+		if (src_layer_index >= 0)
+		{
+			pFP = create_layer_producer(command.GetChannel()->mixer(), (*src_channel)->stage(), src_layer_index);
+		} else 
+		{
+			pFP = create_channel_producer(command.GetChannel()->mixer(), *src_channel);
+		}
+	}
+	return pFP;
+}
 
-		return true;
+bool RouteCommand::DoExecute()
+{	
+	try
+	{
+		auto pFP = RouteCommand::TryCreateProducer(*this, _parameters2[0]);
+		if (pFP != frame_producer::empty())
+		{
+			GetChannel()->stage()->load(GetLayerIndex(), pFP, true);
+			GetChannel()->stage()->play(GetLayerIndex());
+
+			SetReplyString(TEXT("202 ROUTE OK\r\n"));
+		
+			return true;
+		}
+		SetReplyString(TEXT("404 ROUTE ERROR\r\n"));
+		return false;
 	}
 	catch(file_not_found&)
 	{
@@ -890,34 +916,8 @@ bool LoadbgCommand::DoExecute()
 	try
 	{
 		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
-
-		safe_ptr<core::frame_producer> pFP(frame_producer::empty());
-
-		// Test to see if the parameters could be a route://<channel>-<layer> or <channel>-<layer> in which case use the layer_producer
-		// e.g. LOADBG 1-2 route://3-4
-		// Loads a producer on Channel 1 Layer 2 that is a copy of the producer on Channel 3 Layer 4
-		auto tokens = parameters::protocol_split(_parameters2[0]);
-		auto src_channel_layer_token = tokens[0] == L"route" ? tokens[1] : _parameters.at_original(0);
-		std::vector<std::wstring> src_channel_layer;
-		boost::split(src_channel_layer, src_channel_layer_token, boost::is_any_of("-"));
-
-		if (src_channel_layer.size() == 2) // It looks like a route
-		{
-			int src_channel_index = boost::lexical_cast<int>(src_channel_layer[0]);
-			int layer = boost::lexical_cast<int>(src_channel_layer[1]);
-
-			auto channels = GetChannels();
-			auto src_channel = std::find_if(
-				channels.begin(), 
-				channels.end(), 
-				[src_channel_index](const safe_ptr<core::video_channel>& item) { return item->index() == src_channel_index; }
-			);
-			if (src_channel == channels.end())
-				BOOST_THROW_EXCEPTION(null_argument() << msg_info("src channel not found"));
-			auto stage = (*src_channel)->stage();
-
-			pFP = create_layer_producer(GetChannel()->mixer(), stage, layer);
-		} else // Try the producer factory
+		auto pFP = RouteCommand::TryCreateProducer(*this, _parameters2[0]);
+		if (pFP == frame_producer::empty())
 		{
 			pFP = create_producer(GetChannel()->mixer(), _parameters);
 		}
