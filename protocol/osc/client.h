@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2011 Sveriges Television AB <info@casparcg.com>
+* Copyright 2013 Sveriges Television AB http://casparcg.com/
 *
 * This file is part of CasparCG (www.casparcg.com).
 *
@@ -17,6 +17,7 @@
 * along with CasparCG. If not, see <http://www.gnu.org/licenses/>.
 *
 * Author: Robert Nagy, ronag89@gmail.com
+* Author: Helge Norberg, helge.norberg@svt.se
 */
 
 #pragma once
@@ -41,10 +42,22 @@ public:
 
 	client(
 			boost::asio::io_service& service,
-			boost::asio::ip::udp::endpoint endpoint,
 			Concurrency::ISource<core::monitor::message>& source);
 	
 	client(client&&);
+
+	/**
+	 * Get a subscription token that ensures that OSC messages are sent to the
+	 * given endpoint as long as the token is alive. It will stop sending when
+	 * the token is dropped unless another token to the same endpoint has
+	 * previously been checked out.
+	 *
+	 * @param endpoint The UDP endpoint to send OSC messages to.
+	 *
+	 * @return The token. It is ok for the token to outlive the client
+	 */
+	std::shared_ptr<void> get_subscription_token(
+			const boost::asio::ip::udp::endpoint& endpoint);
 
 	~client();
 
@@ -56,7 +69,7 @@ public:
 
 private:
 	struct impl;
-	std::unique_ptr<impl> impl_;
+	std::shared_ptr<impl> impl_;
 };
 
 }}}

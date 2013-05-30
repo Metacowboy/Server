@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2011 Sveriges Television AB <info@casparcg.com>
+* Copyright 2013 Sveriges Television AB http://casparcg.com/
 *
 * This file is part of CasparCG (www.casparcg.com).
 *
@@ -75,20 +75,20 @@ struct server::implementation : boost::noncopyable
 {
 	protocol::asio::io_service_manager			io_service_manager_;
 	core::monitor::subject						monitor_subject_;
-	core::monitor::multi_target					multi_target_;
 	boost::promise<bool>&						shutdown_server_now_;
 	safe_ptr<ogl_device>						ogl_;
 	std::vector<safe_ptr<IO::AsyncEventServer>> async_servers_;	
 	std::shared_ptr<IO::AsyncEventServer>		primary_amcp_server_;
-	std::vector<osc::client>					osc_clients_;
+	osc::client									osc_client_;
+	std::vector<std::shared_ptr<void>>			predefined_osc_subscriptions_;
 	std::vector<safe_ptr<video_channel>>		channels_;
 	std::shared_ptr<thumbnail_generator>		thumbnail_generator_;
 
 	implementation(boost::promise<bool>& shutdown_server_now)
 		: shutdown_server_now_(shutdown_server_now)
 		, ogl_(ogl_device::create())
+		, osc_client_(io_service_manager_.service(), monitor_subject_)
 	{
-		monitor_subject_.link_target(&multi_target_);
 		setup_audio(env::properties());
 
 		ffmpeg::init();
@@ -128,6 +128,7 @@ struct server::implementation : boost::noncopyable
 	{		
 		ffmpeg::uninit();
 
+		primary_amcp_server_.reset();
 		async_servers_.clear();
 		channels_.clear();
 	}
@@ -268,12 +269,10 @@ struct server::implementation : boost::noncopyable
 						predefined_client.second.get<std::wstring>(L"address");
 				const auto port =
 						predefined_client.second.get<unsigned short>(L"port");
-				osc_clients_.push_back(osc::client(
-						io_service_manager_.service(),
-						udp::endpoint(
+				predefined_osc_subscriptions_.push_back(
+						osc_client_.get_subscription_token(udp::endpoint(
 								address_v4::from_string(narrow(address)),
-								port),
-						multi_target_));
+								port)));
 			}
 		}
 
@@ -284,12 +283,10 @@ struct server::implementation : boost::noncopyable
 					{
 						using namespace boost::asio::ip;
 
-						return std::make_shared<osc::client>(
-								io_service_manager_.service(),
+						return osc_client_.get_subscription_token(
 								udp::endpoint(
 										address_v4::from_string(ipv4_address),
-										default_port),
-								multi_target_);
+										default_port));
 					});
 	}
 

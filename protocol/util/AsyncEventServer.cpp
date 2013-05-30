@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2011 Sveriges Television AB <info@casparcg.com>
+* Copyright 2013 Sveriges Television AB http://casparcg.com/
 *
 * This file is part of CasparCG (www.casparcg.com).
 *
@@ -300,8 +300,7 @@ bool AsyncEventServer::OnAccept(SocketInfoPtr& pSI) {
 		{
 			auto lifecycle_bound = lifecycle_factory(ipv4_address);
 
-			if (lifecycle_bound)
-				pClientSocket->bind_to_lifecycle(lifecycle_bound);
+			pClientSocket->bind_to_lifecycle(lifecycle_bound);
 		}
 	}
 
