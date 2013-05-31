@@ -125,13 +125,13 @@ struct output_format
 	CodecID			vcodec;
 	CodecID			acodec;
 
-	output_format(const core::video_format_desc& format_desc, const std::string& filename, std::vector<option>& options)
-		: format(av_guess_format(nullptr, filename.c_str(), nullptr))
-		, width(format_desc.width)
+	output_format(const core::video_format_desc& format_desc, const std::string& resource_name, std::vector<option>& options)
+		: width(format_desc.width)
 		, height(format_desc.height)
 		, vcodec(CODEC_ID_NONE)
 		, acodec(CODEC_ID_NONE)
 	{
+		format = (av_guess_format(nullptr, resource_name.c_str(), nullptr)); // TODO REVIEW May want to make this happen for file only CP 2013-05
 		boost::range::remove_erase_if(options, [&](const option& o)
 		{
 			return set_opt(o.name, o.value);
@@ -218,7 +218,7 @@ typedef std::vector<uint8_t, tbb::cache_aligned_allocator<uint8_t>>	byte_vector;
 
 struct ffmpeg_consumer : boost::noncopyable
 {		
-	const std::string						filename_;
+	const std::string						resource_name_;
 		
 	const std::shared_ptr<AVFormatContext>	oc_;
 	const core::video_format_desc			format_desc_;
@@ -243,8 +243,8 @@ struct ffmpeg_consumer : boost::noncopyable
 	output_format							output_format_;
 	
 public:
-	ffmpeg_consumer(const std::string& filename, const core::video_format_desc& format_desc, std::vector<option> options)
-		: filename_(filename)
+	ffmpeg_consumer(const std::string& resource_name, const core::video_format_desc& format_desc, std::vector<option> options)
+		: resource_name_(resource_name)
 		, video_outbuf_(1920*1080*8)
 		, audio_outbuf_(10000)
 		, oc_(avformat_alloc_context(), av_free)
@@ -252,11 +252,8 @@ public:
 		, encode_executor_(print())
 		, in_frame_number_(0)
 		, out_frame_number_(0)
-		, output_format_(format_desc, filename, options)
+		, output_format_(format_desc, resource_name, options)
 	{
-		// TODO: Ask stakeholders about case where file already exists.
-		boost::filesystem2::remove(boost::filesystem2::wpath(env::media_folder() + widen(filename))); // Delete the file if it exists
-
 		graph_->set_color("frame-time", diagnostics::color(0.1f, 1.0f, 0.1f));
 		graph_->set_text(print());
 		diagnostics::register_graph(graph_);
@@ -265,18 +262,18 @@ public:
 
 		oc_->oformat = output_format_.format;
 				
-		strcpy_s(oc_->filename, filename_.c_str());
+		strcpy_s(oc_->filename, resource_name_.c_str());
 		
 		//  Add the audio and video streams using the default format codecs	and initialize the codecs.
 		auto options2 = options;
 		video_st_ = add_video_stream(options2);
 		audio_st_ = add_audio_stream(options);
 				
-		av_dump_format(oc_.get(), 0, filename_.c_str(), 1);
+		av_dump_format(oc_.get(), 0, resource_name_.c_str(), 1);
 		 
 		// Open the output ffmpeg, if needed.
 		if (!(oc_->oformat->flags & AVFMT_NOFILE)) 
-			THROW_ON_ERROR2(avio_open(&oc_->pb, filename_.c_str(), AVIO_FLAG_WRITE), "[ffmpeg_consumer]");
+			THROW_ON_ERROR2(avio_open(&oc_->pb, resource_name_.c_str(), AVIO_FLAG_WRITE), "[ffmpeg_consumer]");
 				
 		THROW_ON_ERROR2(avformat_write_header(oc_.get(), nullptr), "[ffmpeg_consumer]");
 
@@ -307,7 +304,7 @@ public:
 			
 	std::wstring print() const
 	{
-		return L"ffmpeg[" + widen(filename_) + L"]";
+		return L"ffmpeg[" + widen(resource_name_) + L"]";
 	}
 
 	std::shared_ptr<AVStream> add_video_stream(std::vector<option>& options)
@@ -595,15 +592,15 @@ public:
 
 struct ffmpeg_consumer_proxy : public core::frame_consumer
 {
-	const std::wstring				filename_;
+	const std::wstring					resource_name_;
 	const std::vector<option>			options_;
 
 	std::unique_ptr<ffmpeg_consumer> consumer_;
 
 public:
 
-	ffmpeg_consumer_proxy(const std::wstring& filename, const std::vector<option>& options)
-		: filename_(filename)
+	ffmpeg_consumer_proxy(const std::wstring& resource_name, const std::vector<option>& options)
+		: resource_name_(resource_name)
 		, options_(options)
 	{
 	}
@@ -611,7 +608,7 @@ public:
 	virtual void initialize(const core::video_format_desc& format_desc, int)
 	{
 		consumer_.reset();
-		consumer_.reset(new ffmpeg_consumer(narrow(filename_), format_desc, options_));
+		consumer_.reset(new ffmpeg_consumer(narrow(resource_name_), format_desc, options_));
 	}
 	
 	virtual boost::unique_future<bool> send(const safe_ptr<core::read_frame>& frame) override
@@ -629,7 +626,7 @@ public:
 	{
 		boost::property_tree::wptree info;
 		info.add(L"type", L"ffmpeg-consumer");
-		info.add(L"filename", filename_);
+		info.add(L"resource_name", resource_name_);
 		return info;
 	}
 		
@@ -657,30 +654,32 @@ struct FFMPEG_Option
 
 safe_ptr<core::frame_consumer> create_consumer(const core::parameters& params)
 {
-	if(params.size() < 1 || params[0] != L"FILE")
+	if(params.size() < 1 || (params[0] != L"FILE" && params[0] != L"STREAM"))
 		return core::frame_consumer::empty();
 	
 	bool use_default_options = params.size() < 3;
 
-	auto filename	= (params.size() > 1 ? params[1] : L"");
-			
-	// Add UDP or RTP Stream output
-	bool is_stream = false;
-	if( filename.substr(0,4) == L"UDP:" )
+	// Infer the resource type from the resource_name
+	std::wstring resource_type = L"file";
+	auto resource_name = params.at_original(1);
+	auto tokens = core::parameters::protocol_split(resource_name);
+	if (!tokens[0].empty())
 	{
-		boost::replace_all(filename, L"UDP", L"udp");
-		CASPAR_LOG(info) << L"Stream URL: "+filename;
-		is_stream = true;
+		resource_type = tokens[0];
+		if (resource_type == L"file")
+		{
+			resource_name = tokens[1];
+		}
 	}
-	else
-	if( filename.substr(0,4) == L"RTP:" )
+	if (resource_type == L"file")
 	{
-		boost::replace_all(filename, L"RTP", L"rtp");
-		is_stream = true;
+		resource_name = env::media_folder() + L"\\" + resource_name;
+		// TODO: Ask stakeholders about case where file already exists.
+		boost::filesystem2::remove(boost::filesystem2::wpath(resource_name)); // Delete the file if it exists
 	}
 
 	std::vector<option> options;
-	if( is_stream && use_default_options )
+	if( resource_type != L"file" && use_default_options )
 	{
 		// Default stream output format MPEGTS MPEG4 AAC
 		// -f mpegts -vcodec mpeg4 -acodec mp2 -ab 128000 -s 640x360 -b 1000000
@@ -713,21 +712,18 @@ safe_ptr<core::frame_consumer> create_consumer(const core::parameters& params)
 		}
 	}
 		
-	if( is_stream )
-		return make_safe<ffmpeg_consumer_proxy>(filename, options);
-	else
-		return make_safe<ffmpeg_consumer_proxy>(env::media_folder() + filename, options);
+	return make_safe<ffmpeg_consumer_proxy>(resource_name, options);
 }
 
 safe_ptr<core::frame_consumer> create_consumer(const boost::property_tree::wptree& ptree)
 {
-	auto filename	= ptree.get<std::wstring>(L"path");
+	auto resource_name	= ptree.get<std::wstring>(L"path");
 	auto codec		= ptree.get(L"vcodec", L"libx264");
 
 	std::vector<option> options;
 	options.push_back(option("vcodec", narrow(codec)));
 	
-	return make_safe<ffmpeg_consumer_proxy>(env::media_folder() + filename, options);
+	return make_safe<ffmpeg_consumer_proxy>(env::media_folder() + resource_name, options);
 }
 
 }}
