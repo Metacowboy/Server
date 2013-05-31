@@ -649,7 +649,7 @@ public:
 	}
 };	
 
-safe_ptr<core::frame_consumer> create_consumer(core::parameters const& params)
+safe_ptr<core::frame_consumer> create_consumer(const core::parameters& params)
 {
 	if(params.size() < 1 || params[0] != L"FILE")
 		return core::frame_consumer::empty();
@@ -699,7 +699,7 @@ safe_ptr<core::frame_consumer> create_consumer(core::parameters const& params)
 		options.push_back(option(name, value));
 	}
 
-	if(params2.size() >= 3)
+	if(params.size() >= 3)
 	{
 		for(auto opt_it = params.begin()+2; opt_it != params.end();)
 		{
@@ -716,9 +716,9 @@ safe_ptr<core::frame_consumer> create_consumer(core::parameters const& params)
 	}
 		
 	if( bStream )
-		return make_safe<ffmpeg_consumer_proxy>(filename, options, separate_key);
+		return make_safe<ffmpeg_consumer_proxy>(filename, options);
 	else
-		return make_safe<ffmpeg_consumer_proxy>(env::media_folder() + filename, options, separate_key);
+		return make_safe<ffmpeg_consumer_proxy>(env::media_folder() + filename, options);
 }
 
 safe_ptr<core::frame_consumer> create_consumer(const boost::property_tree::wptree& ptree)
