@@ -656,9 +656,50 @@ safe_ptr<core::frame_consumer> create_consumer(core::parameters const& params)
 	
 	auto filename	= (params.size() > 1 ? params[1] : L"");
 			
+	// Add UDP or RTP Stream output
+	bool bStream = false;
+	if( filename.substr(0,4) == L"UDP:" )
+	{
+		boost::replace_all(filename, L"UDP", L"udp");
+		CASPAR_LOG(info) << L"Stream URL: "+filename;
+		bStream = true;
+	}
+	else
+	if( filename.substr(0,4) == L"RTP:" )
+	{
+		boost::replace_all(filename, L"RTP", L"rtp");
+		bStream = true;
+	}
+
 	std::vector<option> options;
 	
-	if(params.size() >= 3)
+	// Default stream output format MPEGTS MPEG4 AAC
+	if( bStream && params.size() < 3 )
+	{
+		// -f mpegts -vcodec mpeg4 -acodec mp2 -ab 128000 -s 640x360 -b 1000000
+		auto name  = narrow(L"f");
+		auto value = narrow(L"mpegts");
+		options.push_back(option(name, value));
+		name  = narrow(L"vcodec");
+		value = narrow(L"mpeg4");
+		options.push_back(option(name, value));
+		name  = narrow(L"acodec");
+		value = narrow(L"aac");
+		options.push_back(option(name, value));
+		name  = narrow(L"ab");
+		value = narrow(L"128000");
+		options.push_back(option(name, value));
+		name  = narrow(L"s");
+		//value = narrow(L"720x405");
+		value = narrow(L"640x360");
+		options.push_back(option(name, value));
+		name  = narrow(L"b");
+		//value = narrow(L"1200000");
+		value = narrow(L"1000000");
+		options.push_back(option(name, value));
+	}
+
+	if(params2.size() >= 3)
 	{
 		for(auto opt_it = params.begin()+2; opt_it != params.end();)
 		{
@@ -674,7 +715,10 @@ safe_ptr<core::frame_consumer> create_consumer(core::parameters const& params)
 		}
 	}
 		
-	return make_safe<ffmpeg_consumer_proxy>(env::media_folder() + filename, options);
+	if( bStream )
+		return make_safe<ffmpeg_consumer_proxy>(filename, options, separate_key);
+	else
+		return make_safe<ffmpeg_consumer_proxy>(env::media_folder() + filename, options, separate_key);
 }
 
 safe_ptr<core::frame_consumer> create_consumer(const boost::property_tree::wptree& ptree)
