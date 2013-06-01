@@ -128,6 +128,7 @@ struct server::implementation : boost::noncopyable
 	{		
 		ffmpeg::uninit();
 
+		thumbnail_generator_.reset();
 		primary_amcp_server_.reset();
 		async_servers_.clear();
 		channels_.clear();
@@ -201,13 +202,14 @@ struct server::implementation : boost::noncopyable
 			try
 			{
 				auto name = xml_consumer.first;
+
 				if (name == L"screen")
 					on_consumer(ogl::create_consumer(xml_consumer.second));
 				else if (name == L"bluefish")					
 					on_consumer(bluefish::create_consumer(xml_consumer.second));					
 				else if (name == L"decklink")					
 					on_consumer(decklink::create_consumer(xml_consumer.second));				
-				else if (name == L"file")					
+				else if (name == L"file" || name == L"stream")					
 					on_consumer(ffmpeg::create_consumer(xml_consumer.second));						
 				else if (name == L"system-audio")
 					on_consumer(oal::create_consumer());
@@ -297,7 +299,9 @@ struct server::implementation : boost::noncopyable
 
 		auto scan_interval_millis = pt.get(L"configuration.thumbnails.scan-interval-millis", 5000);
 
-		polling_filesystem_monitor_factory monitor_factory(scan_interval_millis);
+		polling_filesystem_monitor_factory monitor_factory(
+				io_service_manager_.service(),
+				scan_interval_millis);
 		thumbnail_generator_.reset(new thumbnail_generator(
 				monitor_factory, 
 				env::media_folder(),

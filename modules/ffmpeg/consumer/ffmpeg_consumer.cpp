@@ -27,6 +27,7 @@
 
 #include "../producer/audio/audio_resampler.h"
 
+#include <core/parameters/parameters.h>
 #include <core/mixer/read_frame.h>
 #include <core/mixer/audio/audio_util.h>
 #include <core/consumer/frame_consumer.h>
@@ -37,7 +38,6 @@
 #include <common/diagnostics/graph.h>
 #include <common/env.h>
 #include <common/utility/string.h>
-#include <common/utility/param.h>
 #include <common/memory/memshfl.h>
 
 #include <boost/algorithm/string.hpp>
@@ -302,7 +302,7 @@ public:
 
 	~ffmpeg_consumer()
 	{    
-		encode_executor_.stop_execute_rest();
+		encode_executor_.stop();
 		encode_executor_.join();
 
 		// Flush
@@ -744,35 +744,32 @@ private:
 	}
 };	
 
-safe_ptr<core::frame_consumer> create_consumer(const std::vector<std::wstring>& params)
+safe_ptr<core::frame_consumer> create_consumer(const core::parameters& params)
 {
 	if(params.size() < 1 || params[0] != L"FILE")
 		return core::frame_consumer::empty();
 
-	std::vector<std::wstring> params2 = params;
+	auto params2 = params;
 	
 	auto filename	= (params2.size() > 1 ? params2[1] : L"");
-	auto separate_key_it = std::find(params2.begin(), params2.end(), L"SEPARATE_KEY");
-	bool separate_key = false;
+	bool separate_key = params2.remove_if_exists(L"SEPARATE_KEY");
 
-	if (separate_key_it != params2.end())
-	{
-		separate_key = true;
-		params2.erase(separate_key_it);
-	}
-			
 	std::vector<option> options;
 	
-	if(params2.size() >= 3)
+	if (params2.size() >= 3)
 	{
-		for(auto opt_it = params2.begin()+2; opt_it != params2.end();)
+		for (auto opt_it = params2.begin() + 2; opt_it != params2.end();)
 		{
 			auto name  = narrow(boost::trim_copy(boost::to_lower_copy(*opt_it++))).substr(1);
+
+			if (opt_it == params2.end())
+				break;
+
 			auto value = narrow(boost::trim_copy(boost::to_lower_copy(*opt_it++)));
 				
-			if(value == "h264")
+			if (value == "h264")
 				value = "libx264";
-			else if(value == "dvcpro")
+			else if (value == "dvcpro")
 				value = "dvvideo";
 
 			options.push_back(option(name, value));
