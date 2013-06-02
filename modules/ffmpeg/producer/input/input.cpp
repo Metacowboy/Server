@@ -59,9 +59,10 @@ extern "C"
 #pragma warning (pop)
 #endif
 
-static const size_t MAX_BUFFER_COUNT = 100;
-static const size_t MIN_BUFFER_COUNT = 50;
-static const size_t MAX_BUFFER_SIZE  = 64 * 1000000;
+static const size_t MAX_BUFFER_COUNT    = 100;
+static const size_t MAX_BUFFER_COUNT_RT = 3;
+static const size_t MIN_BUFFER_COUNT    = 50;
+static const size_t MAX_BUFFER_SIZE     = 64 * 1000000;
 
 namespace caspar { namespace ffmpeg {
 		
@@ -153,7 +154,7 @@ struct input::implementation : boost::noncopyable
 		
 		executor_.begin_invoke([this]
 		{			
-			if(full())
+			if(params_->resource_type != FFMPEG_DEVICE && full())
 				return;
 
 			try
@@ -194,9 +195,11 @@ struct input::implementation : boost::noncopyable
 						packet->data = data;				
 					});
 
-					buffer_.try_push(packet);
-					buffer_size_ += packet->size;
-				
+					if (params_->resource_type != FFMPEG_DEVICE || buffer_.size() < MAX_BUFFER_COUNT_RT)
+					{
+						buffer_.try_push(packet);
+						buffer_size_ += packet->size;
+					}
 					graph_->set_value("buffer-size", (static_cast<double>(buffer_size_)+0.001)/MAX_BUFFER_SIZE);
 					graph_->set_value("buffer-count", (static_cast<double>(buffer_.size()+0.001)/MAX_BUFFER_COUNT));
 				}	
