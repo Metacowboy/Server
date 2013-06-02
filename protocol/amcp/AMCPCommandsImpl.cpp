@@ -916,7 +916,12 @@ bool LoadbgCommand::DoExecute()
 	try
 	{
 		//_parameters[0] = _parameters[0]; // REVIEW: Why is this assignment done? CP 2013-01
-		auto pFP = RouteCommand::TryCreateProducer(*this, _parameters2[0]);
+		auto uri_tokens = parameters::protocol_split(_parameters2[0]);
+		auto pFP = frame_producer::empty();
+		if (uri_tokens[0].empty() || uri_tokens[0] == L"route")
+		{
+			pFP = RouteCommand::TryCreateProducer(*this, _parameters2[0]);
+		}
 		if (pFP == frame_producer::empty())
 		{
 			pFP = create_producer(GetChannel()->mixer(), _parameters);
