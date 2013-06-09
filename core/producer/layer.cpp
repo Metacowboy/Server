@@ -100,13 +100,15 @@ public:
 		frame_number_		= 0;
 		auto_play_delta_	= -1;
 
-		is_paused_			= true;
+		is_paused_			= false;
 	}
 		
 	safe_ptr<basic_frame> receive(int hints)
 	{		
 		try
 		{
+			monitor_subject_ << monitor::message("/paused") % is_paused_;
+
 			if(is_paused_)
 			{
 				if(foreground_->last_frame() == basic_frame::empty())
