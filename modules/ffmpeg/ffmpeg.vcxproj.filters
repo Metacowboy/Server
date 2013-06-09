@@ -145,6 +145,9 @@
     <ClInclude Include="ffmpeg.h">
       <Filter>source</Filter>
     </ClInclude>
+    <ClInclude Include="ffmpeg_producer_params.h">
+      <Filter>source</Filter>
+    </ClInclude>
     <ClInclude Include="producer\filter\filter.h">
       <Filter>source\producer\filter</Filter>
     </ClInclude>
@@ -172,7 +175,6 @@
     <ClInclude Include="producer\tbb_avcodec.h">
       <Filter>source\producer</Filter>
     </ClInclude>
-    <ClInclude Include="producer\util\ffmpeg_producer_params.h" />
     <ClInclude Include="producer2\audio\audio_decoder.h">
       <Filter>source\producer2\audio</Filter>
     </ClInclude>
