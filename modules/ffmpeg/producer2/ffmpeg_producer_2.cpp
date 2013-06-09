@@ -26,8 +26,8 @@
 #include "frame_maker.h"
 #include "input/file_util.h"
 
-#include "../ffmpeg_producer_params.h"
 #include "../ffmpeg_error.h"
+#include "../ffmpeg_params.h"
 
 #include <common/env.h>
 #include <common/utility/assert.h>
@@ -232,9 +232,6 @@ safe_ptr<core::frame_producer> create_producer(const safe_ptr<core::frame_factor
 	boost::replace_all(filter_str, L"DEINTERLACE", L"YADIF=0:-1");
 	//filter_str = append_filter(filter_str, L"fps=fps=50");
 	ffmpeg_params->filter_str	= filter_str;
-	ffmpeg_params->size_str		= params.get_ic(L"SIZE", L"640x480");
-	ffmpeg_params->pixel_format	= params.get_ic(L"PIXFMT", L"yuyv422");
-	ffmpeg_params->frame_rate	= params.get_ic(L"FRAMERATE", L"30");
 	
 	return create_producer_destroy_proxy(make_safe<ffmpeg_producer>(frame_factory, ffmpeg_params));
 }

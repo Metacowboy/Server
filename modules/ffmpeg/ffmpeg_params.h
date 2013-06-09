@@ -37,19 +37,29 @@ enum FFMPEG_Resource {
 	FFMPEG_STREAM
 };
 
+struct option
+{
+	std::string name;
+	std::string value;
+
+	option(std::string name, std::string value)
+		: name(std::move(name))
+		, value(std::move(value))
+	{
+	}
+};
+
 struct ffmpeg_producer_params
 {
-	bool			loop;
-	uint32_t		start;
-	uint32_t		length;
-	std::wstring	filter_str;
+	bool                loop;
+	uint32_t            start;
+	uint32_t            length;
+	std::wstring        filter_str;
 
-	FFMPEG_Resource	resource_type;
-	std::wstring	resource_name;
+	FFMPEG_Resource     resource_type;
+	std::wstring        resource_name;
 
-	std::wstring	size_str;
-	std::wstring	pixel_format;
-	std::wstring	frame_rate;
+	std::vector<option> options;
 
 	ffmpeg_producer_params() 
 		: loop(false)
@@ -58,9 +68,6 @@ struct ffmpeg_producer_params
 		, filter_str(L"")
 		, resource_type(FFMPEG_FILE)
 		, resource_name(L"")
-		, size_str(L"640,480")
-		, pixel_format(L"yuyv422")
-		, frame_rate(L"25")
 	{
 	}
 

@@ -25,8 +25,8 @@
 
 #include "../util/util.h"
 #include "../util/flv.h"
-#include "../../ffmpeg_producer_params.h"
 #include "../../ffmpeg_error.h"
+#include "../../ffmpeg_params.h"
 
 #include <core/video_format.h>
 
@@ -224,18 +224,48 @@ struct input::implementation : boost::noncopyable
 			break;
 		case FFMPEG_DEVICE: {
 			AVDictionary* format_options = NULL;
-			av_dict_set(&format_options, "video_size", narrow(params->size_str).c_str(), 0); // 640x360 for 16:9
-			av_dict_set(&format_options, "pixel_format", narrow(params->pixel_format).c_str(), 0); // yuyv422 for sony
-			av_dict_set(&format_options, "avioflags", "direct", 0);
-			// Don't set framerate here, it is typically set to a fixed rate anyway. Better to insert a fps filter to adjust the frame rate.
-			// av_dict_set(&format_options, "framerate", narrow(params->frame_rate).c_str(), 0);
+			for (auto it = params->options.begin(); it != params->options.end(); ++it)
+			{
+				av_dict_set(&format_options, (*it).name.c_str(), (*it).value.c_str(), 0);
+			}
 			AVInputFormat* input_format = av_find_input_format("dshow");
 			THROW_ON_ERROR2(avformat_open_input(&weak_context, narrow(params->resource_name).c_str(), input_format, &format_options), params->resource_name);
+			if (format_options != nullptr)
+			{
+				std::string unsupported_tokens = "";
+				AVDictionaryEntry *t = NULL;
+				while ((t = av_dict_get(format_options, "", t, AV_DICT_IGNORE_SUFFIX)) != nullptr)
+				{
+					if (!unsupported_tokens.empty())
+						unsupported_tokens += ", ";
+					unsupported_tokens += t->key;
+				}
+				avformat_close_input(&weak_context);
+				BOOST_THROW_EXCEPTION(ffmpeg_error() << msg_info(unsupported_tokens));
+			}
 			av_dict_free(&format_options);
 			} break;
-		case FFMPEG_STREAM:
-			THROW_ON_ERROR2(avformat_open_input(&weak_context, narrow(params->resource_name).c_str(), nullptr, nullptr), params->resource_name);
-			break;
+		case FFMPEG_STREAM: {
+			AVDictionary* format_options = NULL;
+			for (auto it = params->options.begin(); it != params->options.end(); ++it)
+			{
+				av_dict_set(&format_options, (*it).name.c_str(), (*it).value.c_str(), 0);
+			}
+			THROW_ON_ERROR2(avformat_open_input(&weak_context, narrow(params->resource_name).c_str(), nullptr, &format_options), params->resource_name);
+			if (format_options != nullptr)
+			{
+				std::string unsupported_tokens = "";
+				AVDictionaryEntry *t = NULL;
+				while ((t = av_dict_get(format_options, "", t, AV_DICT_IGNORE_SUFFIX)) != nullptr)
+				{
+					if (!unsupported_tokens.empty())
+						unsupported_tokens += ", ";
+					unsupported_tokens += t->key;
+				}
+				avformat_close_input(&weak_context);
+				BOOST_THROW_EXCEPTION(ffmpeg_error() << msg_info(unsupported_tokens));
+			}
+			} break;
 		};
 		safe_ptr<AVFormatContext> context(weak_context, av_close_input_file);			
 		THROW_ON_ERROR2(avformat_find_stream_info(weak_context, nullptr), params->resource_name);
