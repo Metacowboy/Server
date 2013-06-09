@@ -24,7 +24,7 @@
 #include "input.h"
 
 #include "../util/flv.h"
-#include "../../ffmpeg_producer_params.h"
+#include "../../ffmpeg_params.h"
 #include "../ffmpeg_error.h"
 
 #include <common/exception/exceptions.h>
@@ -162,10 +162,6 @@ public:
 			break;
 		case ffmpeg::FFMPEG_DEVICE: {
 			AVDictionary* format_options = NULL;
-			av_dict_set(&format_options, "video_size", narrow(params->size_str).c_str(), 0); // 640x360 for 16:9
-			av_dict_set(&format_options, "pixel_format", narrow(params->pixel_format).c_str(), 0); // yuyv422 for sony // TODO auto set this from the ffmpeg log after -list_options on init
-			//av_dict_set(&format_options, "avioflags", "direct", 0);
-			av_dict_set(&format_options, "framerate", narrow(params->frame_rate).c_str(), 0); // TODO auto set this from channel fps and -list_options CP 2013-04
 			AVInputFormat* input_format = av_find_input_format("dshow");
 			THROW_ON_ERROR2(avformat_open_input(&weak_context, narrow(params->resource_name).c_str(), input_format, &format_options), params->resource_name);
 			av_dict_free(&format_options);

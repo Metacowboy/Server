@@ -23,8 +23,8 @@
 
 #include "frame_maker.h"
 
-#include "../ffmpeg_producer_params.h"
-#include "ffmpeg_error.h"
+#include "../ffmpeg_error.h"
+#include "../ffmpeg_params.h"
 
 #include "input/input.h"
 #include "audio/audio_decoder.h"
