@@ -145,7 +145,7 @@
     <ClInclude Include="ffmpeg.h">
       <Filter>source</Filter>
     </ClInclude>
-    <ClInclude Include="ffmpeg_producer_params.h">
+    <ClInclude Include="ffmpeg_params.h">
       <Filter>source</Filter>
     </ClInclude>
     <ClInclude Include="producer\filter\filter.h">

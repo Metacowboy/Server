@@ -419,7 +419,7 @@
     <ClInclude Include="consumer\ffmpeg_consumer.h" />
     <ClInclude Include="ffmpeg.h" />
     <ClInclude Include="ffmpeg_error.h" />
-    <ClInclude Include="ffmpeg_producer_params.h" />
+    <ClInclude Include="ffmpeg_params.h" />
     <ClInclude Include="producer2\audio\audio_decoder.h" />
     <ClInclude Include="producer2\audio\audio_resampler.h" />
     <ClInclude Include="producer2\ffmpeg_error.h" />

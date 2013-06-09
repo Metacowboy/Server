@@ -23,9 +23,8 @@
 
 #include "ffmpeg_producer.h"
 
-#include "../ffmpeg_producer_params.h"
-
 #include "../ffmpeg_error.h"
+#include "../ffmpeg_params.h"
 
 #include "filter/filter.h"
 #include "input/input.h"
@@ -359,10 +358,23 @@ safe_ptr<core::frame_producer> create_producer(const safe_ptr<core::frame_factor
 	boost::replace_all(filter_str, L"DEINTERLACE_BOB", L"YADIF=1:-1");
 	boost::replace_all(filter_str, L"DEINTERLACE", L"YADIF=0:-1");
 	ffmpeg_params->filter_str	= filter_str;
-	ffmpeg_params->size_str		= params.get_ic(L"SIZE", L"640x480");
-	ffmpeg_params->pixel_format	= params.get_ic(L"PIXFMT", L"yuyv422");
-	ffmpeg_params->frame_rate	= params.get_ic(L"FRAMERATE", L"25");
 	
+	bool haveFFMPEGStartIndicator = false;
+	for (size_t i = 0; i < params.size() - 1; ++i)
+	{
+		if (!haveFFMPEGStartIndicator && params[i] == L"--")
+		{
+			haveFFMPEGStartIndicator = true;
+			continue;
+		}
+		if (haveFFMPEGStartIndicator)
+		{
+			auto name = narrow(params.at_original(i)).substr(1);
+			auto value = narrow(params.at_original(i + 1));
+			ffmpeg_params->options.push_back(option(name, value));
+		}
+	}
+
 	return create_producer_destroy_proxy(make_safe<ffmpeg_producer>(frame_factory, ffmpeg_params));
 }
 
