@@ -369,8 +369,8 @@ safe_ptr<core::frame_producer> create_producer(const safe_ptr<core::frame_factor
 		}
 		if (haveFFMPEGStartIndicator)
 		{
-			auto name = narrow(params.at_original(i)).substr(1);
-			auto value = narrow(params.at_original(i + 1));
+			auto name = narrow(params.at_original(i++)).substr(1);
+			auto value = narrow(params.at_original(i));
 			ffmpeg_params->options.push_back(option(name, value));
 		}
 	}
