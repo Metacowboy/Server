@@ -25,9 +25,7 @@
 #include <vector>
 #include <stdint.h>
 
-namespace caspar { 
-	
-namespace core {
+namespace caspar { namespace core {
 
 class parameters
 {
@@ -71,7 +69,7 @@ public:
 
 	std::wstring original_line() const;
 
-	std::wstring at_original(size_t i) const;
+	const std::wstring& at_original(size_t i) const;
 
 	void set(size_t index, std::wstring const& value);
 
