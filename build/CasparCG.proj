@@ -2,6 +2,7 @@
 	<PropertyGroup>
 		<RootDir>$(teamcity_build_checkoutDir)</RootDir>
 		<LargeFilesDir>c:\BuildDownloads</LargeFilesDir>
+		<SharedDir>C:\Documents and Settings\admin\My Documents\Google Drive\CasparCG</SharedDir>
 	</PropertyGroup>
 
 	<UsingTask TaskName="Split" AssemblyFile="$(RootDir)/build/Palaso.BuildTasks.dll" />
@@ -111,5 +112,12 @@
 		<Delete Files="$(RootDir)\installer\output\$(ApplicationName)Installer.exe" TreatErrorsAsWarnings="false" />
 
 	</Target>
+
+	<Target Name="Upload" DependsOnTargets="Installer">
+		<Copy
+			SourceFiles="$(RootDir)\bin\installer\CasparCGSetup.$(Version).exe"
+			DestinationFiles="$(SharedDir)\CasparCGSetup.$(Version).exe"
+		/>
+	</Target>	
 
 </Project>
