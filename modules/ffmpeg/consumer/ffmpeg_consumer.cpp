@@ -476,28 +476,34 @@ public:
 		av_frame->top_field_first	= format_desc_.field_mode == core::field_mode::upper;
 		av_frame->pts				= out_frame_number_++;
 
-		int out_size = THROW_ON_ERROR2(avcodec_encode_video(c, video_outbuf_.data(), video_outbuf_.size(), av_frame.get()), "[ffmpeg_consumer]");
-		if(out_size == 0)
-			return;
-				
 		safe_ptr<AVPacket> pkt(new AVPacket, [](AVPacket* p)
 		{
 			av_free_packet(p);
 			delete p;
 		});
 		av_init_packet(pkt.get());
- 
-		if (c->coded_frame->pts != AV_NOPTS_VALUE)
-			pkt->pts = av_rescale_q(c->coded_frame->pts, c->time_base, video_st_->time_base);
+		pkt->data = video_outbuf_.data();
+		pkt->size = video_outbuf_.size();
 
-		if(c->coded_frame->key_frame)
-			pkt->flags |= AV_PKT_FLAG_KEY;
+		int got_packet = 0;
+		int result = THROW_ON_ERROR2(avcodec_encode_video2(c, pkt.get(), av_frame.get(), &got_packet), "[ffmpeg_consumer]");
+		if(result != 0)
+			return;
+		
+		if (got_packet)
+		{
+			if (pkt->pts != AV_NOPTS_VALUE)
+				pkt->pts = av_rescale_q(pkt->pts, c->time_base, video_st_->time_base);
+			if (pkt->dts != AV_NOPTS_VALUE)
+				pkt->dts = av_rescale_q(pkt->dts, c->time_base, video_st_->time_base);
 
-		pkt->stream_index	= video_st_->index;
-		pkt->data			= video_outbuf_.data();
-		pkt->size			= out_size;
+			if(c->coded_frame->key_frame)
+				pkt->flags |= AV_PKT_FLAG_KEY;
+
+			pkt->stream_index	= video_st_->index;
  			
-		av_interleaved_write_frame(oc_.get(), pkt.get());		
+			av_interleaved_write_frame(oc_.get(), pkt.get());		
+		}
 	}
 		
 	byte_vector convert_audio(core::read_frame& frame, AVCodecContext* c)
